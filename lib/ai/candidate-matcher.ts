@@ -13,10 +13,11 @@ import { eq, and } from 'drizzle-orm';
 import { processAllPendingCVs } from './cv-processor';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.XAI_API_KEY,
+  baseURL: 'https://api.x.ai/v1',
 });
 
-const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-5';
+const AI_MODEL = process.env.XAI_MODEL || 'grok-4-fast-non-reasoning';
 
 export interface MatchResult {
   candidateId: number;
@@ -37,7 +38,7 @@ export interface MatchingOptions {
 }
 
 /**
- * Match candidates to a job position using GPT-5 mini
+ * Match candidates to a job position using Grok 4 Fast (xAI)
  */
 export async function matchCandidatesForPosition(
   jobPositionId: number,
@@ -169,14 +170,19 @@ Zwróć odpowiedź w formacie JSON:
 }`;
 
   try {
-    const result = await openai.responses.create({
+    const result = await openai.chat.completions.create({
       model: AI_MODEL,
-      input: prompt,
-      reasoning: { effort: 'low' }, // Low effort for faster matching
-      text: { verbosity: 'medium' },
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
     });
 
-    const parsed = JSON.parse(result.output_text);
+    const parsed = JSON.parse(result.choices[0].message.content || '{}');
 
     return {
       candidateId: candidate.id,

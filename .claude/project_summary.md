@@ -48,11 +48,11 @@ This project is an advanced **AI-powered Applicant Tracking System (ATS)** built
   - Subscription confirmations
 
 ### AI & Machine Learning
-- **OpenAI API** - AI processing (GPT-5 model)
-  - CV validation and classification (low reasoning effort)
-  - Structured data extraction (medium reasoning effort)
-  - Intelligent candidate matching (low reasoning effort)
-  - Scoring and reasoning with configurable effort levels
+- **xAI Grok 4 Fast** - AI processing (non-reasoning model)
+  - CV validation and classification (temperature: 0.3)
+  - Structured data extraction (temperature: 0.3)
+  - Intelligent candidate matching (temperature: 0.3)
+  - Fast, reliable JSON output with response_format enforcement
 
 ### External Integrations
 - **Google Gmail API** - Email integration
@@ -289,7 +289,7 @@ cv research/
    - Stores in `cvs.parsedText` field
 
 2. **CV Validation** (AI Step 1)
-   - Model: GPT-5 mini (low reasoning effort)
+   - Model: Grok 4 Fast (xAI, temperature: 0.3)
    - Task: Determine if document is a CV/resume
    - Checks for: personal info, experience, skills, education
    - Rejects: cover letters, invoices, articles
@@ -305,7 +305,7 @@ cv research/
    - If rejected: status = `rejected`
 
 3. **Data Extraction** (AI Step 2)
-   - Model: GPT-5 mini (medium reasoning effort)
+   - Model: Grok 4 Fast (xAI, temperature: 0.3)
    - Task: Extract structured candidate data with enhanced AI processing
    - Extracted fields:
      - Personal: firstName, lastName, email, phone, location
@@ -406,7 +406,7 @@ cv research/
    - Full CV text (up to 6000 chars)
 
 2. **AI Analysis**:
-   - Model: GPT-5 mini (HIGH reasoning effort)
+   - Model: Grok 4 Fast (xAI, temperature: 0.3)
    - Task: Evaluate candidate-job fit
    - Scoring scale:
      - 0-30: Does not meet basic requirements
@@ -679,7 +679,7 @@ cv research/
 5. Extract text using pdf-parse
 6. Save parsed text to CV record
 7. AI Validation:
-   a. Send text to GPT-5 mini
+   a. Send text to Grok 4 Fast (xAI)
    b. Get validation result (isCV, confidence, reason)
    c. Save validation score and reason
 8. If NOT valid CV (confidence < 60):
@@ -687,7 +687,7 @@ cv research/
    - Stop processing
 9. If valid CV:
    a. AI Data Extraction:
-      - Send text to GPT-5 mini
+      - Send text to Grok 4 Fast (xAI)
       - Extract structured data
    b. Create candidate record
    c. Link CV to candidate
@@ -756,7 +756,7 @@ cv research/
       - Job details
       - Candidate profile
       - Full CV text (up to 6000 chars)
-   c. Send to GPT-5 mini (HIGH reasoning effort)
+   c. Send to Grok 4 Fast (xAI, temperature: 0.3)
    d. Parse AI response:
       - Match score (0-100)
       - Detailed analysis
@@ -860,9 +860,9 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
 RESEND_API_KEY=re_xxx
 RESEND_FROM_EMAIL=onboarding@yourdomain.com
 
-# OpenAI (for CV processing)
-OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL=gpt-5
+# xAI (for AI-powered CV processing and matching)
+XAI_API_KEY=xai-xxx
+XAI_MODEL=grok-4-fast-non-reasoning
 
 # Google Gmail API
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
@@ -981,10 +981,12 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 ## AI Integration Details
 
 ### Models Used
-- **GPT-5** - Advanced reasoning model via OpenAI Responses API
-  - CV validation: Low reasoning effort (faster, basic validation)
-  - Data extraction: Medium reasoning effort (balanced accuracy)
-  - Candidate matching: Low reasoning effort (fast matching at scale)
+- **Grok 4 Fast (xAI)** - Fast non-reasoning model via OpenAI-compatible API
+  - API Endpoint: `https://api.x.ai/v1`
+  - Model: `grok-4-fast-non-reasoning`
+  - Temperature: 0.3 (consistent, deterministic outputs)
+  - Response Format: `json_object` (enforced JSON structure)
+  - All operations: CV validation, data extraction, candidate matching
 
 ### Prompt Engineering
 - Prompts in Polish (matching target market)
@@ -1160,10 +1162,34 @@ MIT License - See LICENSE file for details
 ## Project Status
 
 **Version**: 1.0.0 (Development)
-**Last Updated**: 2025-01-15
+**Last Updated**: 2025-10-14
 **Maintainer**: Development Team
 
 **Recent Changes**:
+- **Switched from OpenAI to xAI Grok 4 Fast** (2025-10-14):
+  - Replaced OpenAI GPT-5 with xAI Grok 4 Fast (non-reasoning model)
+  - API Configuration:
+    - New endpoint: `https://api.x.ai/v1`
+    - Model: `grok-4-fast-non-reasoning`
+    - Temperature: 0.3 (consistent outputs)
+    - Response format: JSON object enforcement
+  - Updated Files:
+    - `lib/ai/cv-processor.ts` - CV validation and data extraction
+    - `lib/ai/candidate-matcher.ts` - Candidate matching
+  - API Method Change:
+    - From: `openai.responses.create()` with `input` and `reasoning`/`text` parameters
+    - To: `openai.chat.completions.create()` with `messages` and `temperature`
+  - Response Handling:
+    - From: `result.output_text`
+    - To: `result.choices[0].message.content`
+  - Environment Variables:
+    - Changed: `OPENAI_API_KEY` → `XAI_API_KEY`
+    - Changed: `OPENAI_MODEL` → `XAI_MODEL`
+  - Benefits:
+    - Faster processing (non-reasoning model)
+    - OpenAI SDK compatibility (minimal code changes)
+    - Reliable JSON output with format enforcement
+    - All prompts remain in Polish, functionality unchanged
 - **GPT-5 API Configuration Fix** (2025-10-14):
   - Fixed incorrect model name: `gpt-5-mini` → `gpt-5`
   - Changed candidate matching reasoning effort: `high` → `low` for faster performance

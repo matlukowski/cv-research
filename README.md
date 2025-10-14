@@ -105,6 +105,9 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
 # Resend (get from https://resend.com/api-keys)
 RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL=onboarding@yourdomain.com
+
+# xAI (get from https://console.x.ai)
+XAI_API_KEY=xai-...
 ```
 
 ### 3. Start Database
@@ -183,6 +186,9 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
 # Resend (production)
 RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL=your@domain.com
+
+# xAI (production)
+XAI_API_KEY=xai-...
 
 # App
 BASE_URL=https://yourdomain.com

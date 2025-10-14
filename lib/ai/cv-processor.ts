@@ -7,10 +7,11 @@ import { eq } from 'drizzle-orm';
 import { getFile } from '../storage/file-storage';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.XAI_API_KEY,
+  baseURL: 'https://api.x.ai/v1',
 });
 
-const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-5';
+const AI_MODEL = process.env.XAI_MODEL || 'grok-4-fast-non-reasoning';
 
 export interface CVValidationResult {
   isCV: boolean;
@@ -105,7 +106,7 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
 }
 
 /**
- * Validate if a document is a CV using GPT-5 mini
+ * Validate if a document is a CV using Grok 4 Fast (xAI)
  */
 export async function validateCV(pdfText: string): Promise<CVValidationResult> {
   try {
@@ -135,14 +136,19 @@ Odpowiedz w formacie JSON:
   "reason": "krótkie wyjaśnienie decyzji po polsku"
 }`;
 
-    const result = await openai.responses.create({
+    const result = await openai.chat.completions.create({
       model: AI_MODEL,
-      input: prompt,
-      reasoning: { effort: 'low' },
-      text: { verbosity: 'low' },
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
     });
 
-    const parsed = JSON.parse(result.output_text);
+    const parsed = JSON.parse(result.choices[0].message.content || '{}');
 
     return {
       isCV: parsed.isCV,
@@ -156,7 +162,7 @@ Odpowiedz w formacie JSON:
 }
 
 /**
- * Extract structured candidate data from CV text using GPT-5 mini
+ * Extract structured candidate data from CV text using Grok 4 Fast (xAI)
  */
 export async function extractCandidateData(
   pdfText: string
@@ -238,14 +244,19 @@ WAŻNE:
 - Zwróć TYLKO poprawny JSON, bez dodatkowego tekstu ani komentarzy
 - Upewnij się że JSON jest poprawnie sformatowany (prawidłowe cudzysłowy, przecinki, etc.)`;
 
-    const result = await openai.responses.create({
+    const result = await openai.chat.completions.create({
       model: AI_MODEL,
-      input: prompt,
-      reasoning: { effort: 'medium' },
-      text: { verbosity: 'medium' },
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
     });
 
-    const parsed: ExtractedCandidateData = JSON.parse(result.output_text);
+    const parsed: ExtractedCandidateData = JSON.parse(result.choices[0].message.content || '{}');
 
     return parsed;
   } catch (error) {
