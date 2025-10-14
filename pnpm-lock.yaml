@@ -65,6 +65,12 @@ importers:
       pdf-parse:
         specifier: ^2.3.0
         version: 2.3.0
+      pdfjs-dist:
+        specifier: ^5.4.296
+        version: 5.4.296
+      pdfreader:
+        specifier: ^3.0.7
+        version: 3.0.7
       postcss:
         specifier: ^8.5.3
         version: 8.5.3
@@ -2059,9 +2065,20 @@ packages:
     resolution: {integrity: sha512-VRKvhqdZ694CjdR1vusZ7VIA7ZuMN/GQ7eKz+e3z9ujCQdCQMOEG9x6cHfq8ddS7XspXVrruWuKmXm8g0hFlSQ==}
     engines: {node: '>=20.16.0 <21 || >=22.3.0'}
 
+  pdf2json@3.1.4:
+    resolution: {integrity: sha512-rS+VapXpXZr+5lUpHmRh3ugXdFXp24p1RyG24yP1DMpqP4t0mrYNGpLtpSbWD42PnQ59GIXofxF+yWb7M+3THg==}
+    engines: {node: '>=18.12.1', npm: '>=8.19.2'}
+    hasBin: true
+    bundledDependencies:
+      - '@xmldom/xmldom'
+
   pdfjs-dist@5.4.296:
     resolution: {integrity: sha512-DlOzet0HO7OEnmUmB6wWGJrrdvbyJKftI1bhMitK7O2N8W2gc757yyYBbINy9IDafXAV9wmKr9t7xsTaNKRG5Q==}
     engines: {node: '>=20.16.0 || >=22.3.0'}
+
+  pdfreader@3.0.7:
+    resolution: {integrity: sha512-68Htw7su6HDJGGKv9tkjilRyf8zaHulEKRCgCwx4FE8krcMB8iBtM46Smjjez0jFm45dUKYXJzThyLwCqfQlCQ==}
+    engines: {node: '>=14'}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -4055,9 +4072,15 @@ snapshots:
     optionalDependencies:
       '@napi-rs/canvas': 0.1.80
 
+  pdf2json@3.1.4: {}
+
   pdfjs-dist@5.4.296:
     optionalDependencies:
       '@napi-rs/canvas': 0.1.80
+
+  pdfreader@3.0.7:
+    dependencies:
+      pdf2json: 3.1.4
 
   picocolors@1.1.1: {}
 

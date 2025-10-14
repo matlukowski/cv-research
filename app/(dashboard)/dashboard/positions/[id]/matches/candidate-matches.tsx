@@ -7,15 +7,8 @@ import { ScoreBadge } from '@/components/score-badge';
 import { MatchQualityBadge } from '@/components/status-badge';
 import { EmptyState } from '@/components/empty-state';
 import { LoadingSpinner } from '@/components/loading-spinner';
-import { Users, Mail, Phone, MapPin, Sparkles, CheckCircle, X } from 'lucide-react';
+import { Users, Mail, Phone, MapPin, Sparkles, CheckCircle, X, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import Link from 'next/link';
-
-interface JobPosition {
-  id: number;
-  title: string;
-  description: string;
-}
 
 interface MatchResult {
   candidateId: number;
@@ -31,57 +24,47 @@ interface MatchResult {
 }
 
 export default function CandidateMatches({ positionId }: { positionId: number }) {
-  const [position, setPosition] = useState<JobPosition | null>(null);
   const [matches, setMatches] = useState<MatchResult[]>([]);
   const [isMatching, setIsMatching] = useState(false);
-  const [hasResults, setHasResults] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasSearched, setHasSearched] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    fetchPosition();
     fetchExistingMatches();
   }, []);
 
-  const fetchPosition = async () => {
-    try {
-      const response = await fetch(`/api/positions/${positionId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setPosition(data.position);
-      }
-    } catch (error) {
-      console.error('Error fetching position:', error);
-    }
-  };
-
   const fetchExistingMatches = async () => {
+    setIsLoading(true);
     try {
       const response = await fetch(`/api/positions/${positionId}/match`);
       if (response.ok) {
         const data = await response.json();
         if (data.matches.length > 0) {
           setMatches(data.matches);
-          setHasResults(true);
+          setHasSearched(true);
         }
       }
     } catch (error) {
       console.error('Error fetching matches:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleMatch = async (rematch: boolean = false) => {
+  const handleMatch = async () => {
     setIsMatching(true);
     try {
       const response = await fetch(`/api/positions/${positionId}/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rematch }),
+        body: JSON.stringify({ rematch: hasSearched }),
       });
 
       if (response.ok) {
         const data = await response.json();
         setMatches(data.matches);
-        setHasResults(true);
+        setHasSearched(true);
         toast({
           title: 'Matchowanie zakończone',
           description: `Znaleziono ${data.totalMatches} dopasowanych kandydatów`,
@@ -108,179 +91,181 @@ export default function CandidateMatches({ positionId }: { positionId: number })
     return 'low';
   };
 
-  if (!position) {
-    return <LoadingSpinner size="lg" text="Ładowanie stanowiska..." />;
+  if (isLoading) {
+    return <LoadingSpinner size="lg" text="Ładowanie..." />;
   }
 
+  // Initial state or no matches found - show centered button
+  if (!hasSearched || matches.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
+        {!hasSearched ? (
+          <EmptyState
+            icon={Users}
+            title="Znajdź dopasowanych kandydatów"
+            description="Nie pobrano jeszcze kandydatów z dostępnych CV. Kliknij przycisk poniżej, aby uruchomić AI i znaleźć najlepiej dopasowanych kandydatów do tego stanowiska."
+          />
+        ) : (
+          <EmptyState
+            icon={Users}
+            title="Brak dopasowanych kandydatów"
+            description="Nie znaleziono kandydatów spełniających wymagania dla tego stanowiska. Spróbuj ponownie lub dodaj więcej CV do systemu."
+          />
+        )}
+
+        <Button
+          onClick={handleMatch}
+          disabled={isMatching}
+          size="lg"
+          className="gap-2"
+        >
+          {isMatching ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Wyszukiwanie kandydatów...
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-5 w-5" />
+              Znajdź kandydatów
+            </>
+          )}
+        </Button>
+      </div>
+    );
+  }
+
+  // Results state - show candidate list
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-start">
+      {/* Header with refresh button */}
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{position.title}</h1>
-          <p className="text-muted-foreground mt-2">
-            {hasResults
-              ? `Znaleziono ${matches.length} dopasowanych kandydatów`
-              : 'Znajdź idealnych kandydatów za pomocą AI'}
+          <h2 className="text-2xl font-bold">Dopasowani kandydaci</h2>
+          <p className="text-muted-foreground mt-1">
+            Znaleziono {matches.length} kandydatów dopasowanych do tego stanowiska
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => handleMatch(false)}
-            disabled={isMatching}
-            className="gap-2"
-          >
-            {isMatching ? (
+        <Button
+          onClick={handleMatch}
+          disabled={isMatching}
+          variant="outline"
+          className="gap-2"
+        >
+          {isMatching ? (
+            <>
               <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
+              Przeliczanie...
+            </>
+          ) : (
+            <>
               <Sparkles className="h-4 w-4" />
-            )}
-            {hasResults ? 'Odśwież' : 'Znajdź kandydatów'}
-          </Button>
-          {hasResults && (
-            <Button
-              onClick={() => handleMatch(true)}
-              disabled={isMatching}
-              variant="outline"
-              className="gap-2"
-            >
               Przelicz ponownie
-            </Button>
+            </>
           )}
-        </div>
+        </Button>
       </div>
 
-      {/* Position Description */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Opis stanowiska</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm">{position.description}</p>
-        </CardContent>
-      </Card>
-
-      {/* Matches Results */}
-      {matches.length === 0 && hasResults && (
-        <EmptyState
-          icon={Users}
-          title="Brak dopasowanych kandydatów"
-          description="Nie znaleziono kandydatów spełniających wymagania dla tego stanowiska"
-          action={{
-            label: "Znajdź kandydatów",
-            onClick: () => handleMatch(false)
-          }}
-        />
-      )}
-
-      {matches.length > 0 && (
-        <div className="space-y-4">
-          {matches.map((match, index) => {
-            const matchQuality = getMatchQuality(match.matchScore);
-            return (
-              <Card key={match.candidateId}>
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-6">
-                      <ScoreBadge
-                        score={match.matchScore}
-                        size="lg"
-                        showLabel={false}
-                        animated={true}
-                      />
-                      <div>
-                        <CardTitle>
-                          #{index + 1} {match.candidateName}
-                        </CardTitle>
-                        <CardDescription className="mt-1 space-y-1">
-                          {match.email && (
-                            <div className="flex items-center gap-1">
-                              <Mail className="h-3 w-3" />
-                              {match.email}
-                            </div>
-                          )}
-                          {match.phone && (
-                            <div className="flex items-center gap-1">
-                              <Phone className="h-3 w-3" />
-                              {match.phone}
-                            </div>
-                          )}
-                          {match.location && (
-                            <div className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {match.location}
-                            </div>
-                          )}
-                        </CardDescription>
-                      </div>
+      {/* Candidates List */}
+      <div className="space-y-4">
+        {matches.map((match, index) => {
+          const matchQuality = getMatchQuality(match.matchScore);
+          return (
+            <Card key={match.candidateId}>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-6">
+                    <ScoreBadge
+                      score={match.matchScore}
+                      size="lg"
+                      showLabel={false}
+                      animated={true}
+                    />
+                    <div>
+                      <CardTitle>
+                        #{index + 1} {match.candidateName}
+                      </CardTitle>
+                      <CardDescription className="mt-1 space-y-1">
+                        {match.email && (
+                          <div className="flex items-center gap-1">
+                            <Mail className="h-3 w-3" />
+                            {match.email}
+                          </div>
+                        )}
+                        {match.phone && (
+                          <div className="flex items-center gap-1">
+                            <Phone className="h-3 w-3" />
+                            {match.phone}
+                          </div>
+                        )}
+                        {match.location && (
+                          <div className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {match.location}
+                          </div>
+                        )}
+                      </CardDescription>
                     </div>
-                    <MatchQualityBadge quality={matchQuality} score={match.matchScore} />
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Summary */}
+                  <MatchQualityBadge quality={matchQuality} score={match.matchScore} />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Summary */}
+                <div>
+                  <h4 className="font-semibold text-sm mb-2">Podsumowanie AI</h4>
+                  <p className="text-sm text-muted-foreground">{match.summary}</p>
+                </div>
+
+                {/* Strengths */}
+                {match.strengths.length > 0 && (
                   <div>
-                    <h4 className="font-semibold text-sm mb-2">Podsumowanie AI</h4>
-                    <p className="text-sm text-muted-foreground">{match.summary}</p>
+                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      Mocne strony
+                    </h4>
+                    <ul className="space-y-1">
+                      {match.strengths.map((strength, idx) => (
+                        <li key={idx} className="text-sm text-muted-foreground ml-6">
+                          • {strength}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
+                )}
 
-                  {/* Strengths */}
-                  {match.strengths.length > 0 && (
-                    <div>
-                      <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                        Mocne strony
-                      </h4>
-                      <ul className="space-y-1">
-                        {match.strengths.map((strength, idx) => (
-                          <li key={idx} className="text-sm text-muted-foreground ml-6">
-                            • {strength}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Weaknesses */}
-                  {match.weaknesses.length > 0 && (
-                    <div>
-                      <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
-                        <X className="h-4 w-4 text-red-600" />
-                        Do poprawy
-                      </h4>
-                      <ul className="space-y-1">
-                        {match.weaknesses.map((weakness, idx) => (
-                          <li key={idx} className="text-sm text-muted-foreground ml-6">
-                            • {weakness}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Detailed Analysis */}
-                  <div className="border-t pt-4">
-                    <details>
-                      <summary className="font-semibold text-sm cursor-pointer hover:text-primary">
-                        Szczegółowa analiza AI
-                      </summary>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        {match.aiAnalysis}
-                      </p>
-                    </details>
+                {/* Weaknesses */}
+                {match.weaknesses.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                      <X className="h-4 w-4 text-red-600" />
+                      Do poprawy
+                    </h4>
+                    <ul className="space-y-1">
+                      {match.weaknesses.map((weakness, idx) => (
+                        <li key={idx} className="text-sm text-muted-foreground ml-6">
+                          • {weakness}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                )}
 
-      {/* Back Button */}
-      <div className="flex justify-center pt-4">
-        <Button variant="outline" asChild>
-          <Link href="/dashboard/positions">Powrót do listy stanowisk</Link>
-        </Button>
+                {/* Detailed Analysis */}
+                <div className="border-t pt-4">
+                  <details>
+                    <summary className="font-semibold text-sm cursor-pointer hover:text-primary">
+                      Szczegółowa analiza AI
+                    </summary>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {match.aiAnalysis}
+                    </p>
+                  </details>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

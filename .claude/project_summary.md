@@ -48,11 +48,11 @@ This project is an advanced **AI-powered Applicant Tracking System (ATS)** built
   - Subscription confirmations
 
 ### AI & Machine Learning
-- **OpenAI API** - AI processing (GPT-5 mini model)
-  - CV validation and classification
-  - Structured data extraction
-  - Intelligent candidate matching
-  - Scoring and reasoning
+- **OpenAI API** - AI processing (GPT-5 model)
+  - CV validation and classification (low reasoning effort)
+  - Structured data extraction (medium reasoning effort)
+  - Intelligent candidate matching (low reasoning effort)
+  - Scoring and reasoning with configurable effort levels
 
 ### External Integrations
 - **Google Gmail API** - Email integration
@@ -862,7 +862,7 @@ RESEND_FROM_EMAIL=onboarding@yourdomain.com
 
 # OpenAI (for CV processing)
 OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL=gpt-5-mini
+OPENAI_MODEL=gpt-5
 
 # Google Gmail API
 GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
@@ -981,10 +981,10 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 ## AI Integration Details
 
 ### Models Used
-- **GPT-5 mini** - Fast, cost-effective for all tasks
-  - CV validation: Low reasoning effort
-  - Data extraction: Medium reasoning effort
-  - Candidate matching: High reasoning effort
+- **GPT-5** - Advanced reasoning model via OpenAI Responses API
+  - CV validation: Low reasoning effort (faster, basic validation)
+  - Data extraction: Medium reasoning effort (balanced accuracy)
+  - Candidate matching: Low reasoning effort (fast matching at scale)
 
 ### Prompt Engineering
 - Prompts in Polish (matching target market)
@@ -1164,6 +1164,25 @@ MIT License - See LICENSE file for details
 **Maintainer**: Development Team
 
 **Recent Changes**:
+- **GPT-5 API Configuration Fix** (2025-10-14):
+  - Fixed incorrect model name: `gpt-5-mini` → `gpt-5`
+  - Changed candidate matching reasoning effort: `high` → `low` for faster performance
+  - Confirmed correct API structure: `openai.responses.create()` with `input` parameter
+  - API endpoint: `/v1/responses` (not /chat/completions)
+  - All AI operations now use GPT-5 with appropriate reasoning effort levels
+- **Database Schema Fix + Complete Candidate Matches UI Rebuild** (2025-10-14):
+  - **Database Migration** (0003_add_candidate_fields.sql):
+    - Fixed missing columns in candidates table: years_of_experience, technical_skills, soft_skills, certifications, languages, key_achievements
+    - Schema was updated but migration never generated - caused PostgreSQL error "column candidates.years_of_experience does not exist"
+    - Migration successfully applied to database
+  - **Complete UI Rebuild** (candidate-matches.tsx):
+    - Removed all header sections (position title, description)
+    - **Initial State**: Centered "Znajdź kandydatów" button with empty state message
+    - **Empty State**: Displays "Nie pobrano jeszcze kandydatów z dostępnych CV" when no workflow has run
+    - **Results State**: Shows candidate list with prominent 1-100% match score badges
+    - **Scoring**: Only shows matches specific to the current job position (filtered by jobPositionId)
+    - Cleaner, focused UI centered on candidate discovery and scoring
+    - Uses EmptyState, ScoreBadge, and LoadingSpinner components for better UX
 - **Simplified & Permissive CV Filtering** (2025-10-14 - UPDATED):
   - NEW FILE: `lib/gmail/cv-filters.ts` - Blacklist-focused filtering (not quality scoring)
   - Philosophy: "Better 5 false positives than 1 missed CV"

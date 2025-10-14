@@ -12,7 +12,7 @@ import { getTeamForUser } from '@/lib/db/queries';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { userId } = await auth();
@@ -27,7 +27,9 @@ export async function GET(
       return NextResponse.json({ error: 'Team not found' }, { status: 404 });
     }
 
-    const cvId = parseInt(params.id);
+    // Await params in Next.js 15
+    const { id } = await params;
+    const cvId = parseInt(id);
     if (isNaN(cvId)) {
       return NextResponse.json({ error: 'Invalid CV ID' }, { status: 400 });
     }

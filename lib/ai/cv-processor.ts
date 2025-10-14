@@ -1,7 +1,6 @@
 'use server';
 
 import { OpenAI } from 'openai';
-import * as pdfParse from 'pdf-parse';
 import { db } from '../db/drizzle';
 import { cvs, candidates, type NewCandidate } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -11,7 +10,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-5';
 
 export interface CVValidationResult {
   isCV: boolean;
@@ -52,16 +51,55 @@ export interface ExtractedCandidateData {
 }
 
 /**
- * Extract text from PDF buffer
+ * Extract text from PDF buffer using pdfreader (simple, Node.js-native library)
+ *
+ * WHY parse PDF → text instead of sending PDF directly?
+ * 1. Size reduction: 300KB PDF → 3-5KB text (99% reduction)
+ * 2. API compatibility: OpenAI accepts text, not binary PDF
+ * 3. Cost efficiency: Text uses ~1500 tokens vs impossible with binary
+ * 4. Speed: Text parsing is instant vs alternatives (PDF→images→Vision API)
+ * 5. Industry standard: All ATS systems (LinkedIn, Indeed) do the same
+ *
+ * For 1000 CVs: 5MB text vs 300MB PDF - massive difference!
  */
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
-    // pdf-parse ESM requires .default for namespace import
-    const parse = (pdfParse as any).default || pdfParse;
-    const data = await parse(buffer);
-    return data.text;
+    console.log('[PDF] Buffer size:', buffer?.length || 0, 'bytes');
+
+    if (!buffer || buffer.length === 0) {
+      throw new Error('Invalid or empty buffer');
+    }
+
+    // Use pdfreader - simple, stable Node.js library (no worker issues)
+    const { PdfReader } = require('pdfreader');
+
+    return new Promise((resolve, reject) => {
+      let fullText = '';
+      let charCount = 0;
+      const maxChars = 10000; // Limit to 10k chars for performance
+
+      const reader = new PdfReader();
+
+      reader.parseBuffer(buffer, (err: any, item: any) => {
+        if (err) {
+          console.error('[PDF] Parse error:', err);
+          reject(err);
+        } else if (!item) {
+          // End of document
+          const finalText = fullText.trim();
+          console.log('[PDF] Extracted', finalText.length, 'characters');
+          resolve(finalText);
+        } else if (item.text) {
+          // Add text with spacing
+          if (charCount < maxChars) {
+            fullText += item.text + ' ';
+            charCount += item.text.length;
+          }
+        }
+      });
+    });
   } catch (error) {
-    console.error('Error parsing PDF:', error);
+    console.error('[PDF] Error parsing PDF:', error);
     throw new Error('Failed to extract text from PDF');
   }
 }

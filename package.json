@@ -32,6 +32,8 @@
     "db:seed": "npx tsx lib/db/seed.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate-candidates": "npx tsx scripts/migrate-candidates.ts",
+    "db:reset-cv-status": "npx tsx scripts/reset-cv-status.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
@@ -54,6 +56,8 @@
     "next": "15.4.0-canary.47",
     "openai": "^6.3.0",
     "pdf-parse": "^2.3.0",
+    "pdfjs-dist": "^5.4.296",
+    "pdfreader": "^3.0.7",
     "postcss": "^8.5.3",
     "postgres": "^3.4.5",
     "radix-ui": "^1.4.2",

@@ -16,7 +16,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
+const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-5';
 
 export interface MatchResult {
   candidateId: number;
@@ -172,7 +172,7 @@ Zwróć odpowiedź w formacie JSON:
     const result = await openai.responses.create({
       model: AI_MODEL,
       input: prompt,
-      reasoning: { effort: 'high' }, // High effort for accurate matching
+      reasoning: { effort: 'low' }, // Low effort for faster matching
       text: { verbosity: 'medium' },
     });
 
