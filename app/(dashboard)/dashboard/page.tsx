@@ -4,15 +4,16 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardFooter
 } from '@/components/card';
+import { StatCard, StatCardGrid } from '@/components/stat-card';
+import { StatusBadge } from '@/components/status-badge';
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/db/drizzle';
 import { cvs, jobPositions, candidates, gmailConnections } from '@/lib/db/schema';
 import { eq, and, count } from 'drizzle-orm';
-import { FileText, Briefcase, Users, Mail } from 'lucide-react';
+import { FileText, Briefcase, Users, Mail, TrendingUp, CheckCircle2 } from 'lucide-react';
 
 async function getDashboardStats(teamId: number) {
   try {
@@ -86,77 +87,36 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">CV w systemie</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-semibold">{stats.cvCount}</p>
-            <p className="text-sm text-muted-foreground">Wszystkie CV</p>
-          </CardContent>
-          <CardFooter>
-            <Button asChild variant="ghost" className="w-full">
-              <Link href="/dashboard/cvs">Zobacz CV</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Kandydaci</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-semibold">{stats.candidateCount}</p>
-            <p className="text-sm text-muted-foreground">W bazie danych</p>
-          </CardContent>
-          <CardFooter>
-            <Button asChild variant="ghost" className="w-full">
-              <Link href="/dashboard/cvs">Zarządzaj</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Aktywne stanowiska</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-semibold">{stats.activePositionsCount}</p>
-            <p className="text-sm text-muted-foreground">Otwarte rekrutacje</p>
-          </CardContent>
-          <CardFooter>
-            <Button asChild variant="ghost" className="w-full">
-              <Link href="/dashboard/positions">Zobacz stanowiska</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Gmail</CardTitle>
-            <Mail className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-semibold">
-              {stats.gmailConnected ? '✓' : '✗'}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {stats.gmailConnected
-                ? `Połączony: ${stats.gmailEmail?.substring(0, 20)}...`
-                : 'Nie połączony'}
-            </p>
-          </CardContent>
-          <CardFooter>
-            <Button asChild variant="ghost" className="w-full">
-              <Link href="/dashboard/settings">Ustawienia</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-      </section>
+      <StatCardGrid columns={4}>
+        <StatCard
+          title="CV w systemie"
+          value={stats.cvCount}
+          subtitle="Wszystkie CV"
+          icon={FileText}
+          color="primary"
+        />
+        <StatCard
+          title="Kandydaci"
+          value={stats.candidateCount}
+          subtitle="W bazie danych"
+          icon={Users}
+          color="secondary"
+        />
+        <StatCard
+          title="Aktywne stanowiska"
+          value={stats.activePositionsCount}
+          subtitle="Otwarte rekrutacje"
+          icon={Briefcase}
+          color="accent"
+        />
+        <StatCard
+          title="Status Gmail"
+          value={stats.gmailConnected ? 'Połączony' : 'Nie połączony'}
+          subtitle={stats.gmailConnected ? stats.gmailEmail?.substring(0, 25) || '' : 'Skonfiguruj połączenie'}
+          icon={stats.gmailConnected ? CheckCircle2 : Mail}
+          color={stats.gmailConnected ? 'success' : 'warning'}
+        />
+      </StatCardGrid>
 
       <section className="grid gap-4 md:grid-cols-2">
         <Card>

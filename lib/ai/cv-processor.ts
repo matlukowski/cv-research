@@ -25,7 +25,9 @@ export interface ExtractedCandidateData {
   email?: string;
   phone?: string;
   summary: string;
-  skills: string[];
+  yearsOfExperience?: number;
+  technicalSkills: string[];
+  softSkills: string[];
   experience: Array<{
     company: string;
     position: string;
@@ -39,6 +41,12 @@ export interface ExtractedCandidateData {
     field: string;
     graduationYear?: string;
   }>;
+  certifications?: string[];
+  languages?: Array<{
+    language: string;
+    level: string;
+  }>;
+  keyAchievements?: string[];
   linkedinUrl?: string;
   location?: string;
 }
@@ -114,42 +122,81 @@ export async function extractCandidateData(
   pdfText: string
 ): Promise<ExtractedCandidateData> {
   try {
-    const prompt = `Jesteś ekspertem HR. Wyciągnij strukturalne dane kandydata z poniższego CV.
+    const prompt = `Jesteś ekspertem HR specjalizującym się w analizie CV i ekstrakcji danych kandydatów.
 
 TEKST CV:
 ${pdfText}
+
+INSTRUKCJE EKSTRAKCJI:
+
+1. **Summary (Podsumowanie)**: Napisz profesjonalne, szczegółowe podsumowanie profilu kandydata (4-6 zdań) zawierające:
+   - Łączną liczbę lat doświadczenia zawodowego
+   - Główną specjalizację / rolę zawodową
+   - Top 3 kluczowe umiejętności techniczne
+   - Jedno największe osiągnięcie lub wyróżnik
+   - Obecny poziom kariery (junior/mid/senior)
+
+2. **Normalizacja danych**:
+   - Telefon: Zawsze format międzynarodowy z + (np. "+48 123 456 789")
+   - Umiejętności: Pierwsza litera wielka, pełne nazwy (np. "JavaScript" nie "JS")
+   - Daty: Zawsze format "YYYY-MM" lub "YYYY" (jeśli tylko rok)
+   - Firmy/Stanowiska: Popraw ewidentne literówki, zachowaj oryginalne nazwy własne
+
+3. **Podział umiejętności**:
+   - technicalSkills: Umiejętności techniczne, programistyczne, narzędzia, języki programowania, frameworki
+   - softSkills: Umiejętności miękkie (komunikacja, przywództwo, zarządzanie czasem, etc.)
+
+4. **Lata doświadczenia**: Oblicz łączną liczbę lat pracy zawodowej na podstawie dat w doświadczeniu. Zaokrąglij do pełnych lat.
+
+5. **Key Achievements**: Wybierz 3-5 najważniejszych osiągnięć kandydata z całego CV (konkretne wyniki, nagrody, projekty, awanse).
 
 Wyciągnij następujące informacje i zwróć w formacie JSON:
 {
   "firstName": "imię",
   "lastName": "nazwisko",
-  "email": "adres email (jeśli dostępny)",
-  "phone": "numer telefonu (jeśli dostępny)",
-  "summary": "krótkie podsumowanie profilu kandydata (2-3 zdania)",
-  "skills": ["umiejętność1", "umiejętność2", ...],
+  "email": "adres email w formacie email@domain.com (jeśli dostępny)",
+  "phone": "numer telefonu w formacie +XX XXX XXX XXX (jeśli dostępny)",
+  "summary": "profesjonalne podsumowanie profilu (4-6 zdań) - patrz instrukcje powyżej",
+  "yearsOfExperience": liczba lat doświadczenia (number) lub null,
+  "technicalSkills": ["Umiejętność techniczna 1", "Umiejętność techniczna 2", ...],
+  "softSkills": ["Umiejętność miękka 1", "Umiejętność miękka 2", ...],
   "experience": [
     {
-      "company": "nazwa firmy",
-      "position": "stanowisko",
-      "startDate": "YYYY-MM lub YYYY",
-      "endDate": "YYYY-MM lub YYYY lub null jeśli aktualne",
-      "description": "opis obowiązków (opcjonalnie)"
+      "company": "Nazwa firmy",
+      "position": "Stanowisko",
+      "startDate": "YYYY-MM",
+      "endDate": "YYYY-MM" lub null jeśli aktualne,
+      "description": "Profesjonalny opis osiągnięć i obowiązków"
     }
   ],
   "education": [
     {
-      "institution": "nazwa uczelni",
-      "degree": "stopień (np. Licencjat, Magister, Inżynier)",
-      "field": "kierunek studiów",
-      "graduationYear": "rok ukończenia"
+      "institution": "Nazwa uczelni",
+      "degree": "Stopień (Licencjat, Magister, Inżynier, etc.)",
+      "field": "Kierunek studiów",
+      "graduationYear": "YYYY"
     }
   ],
-  "linkedinUrl": "URL profilu LinkedIn (jeśli dostępny)",
-  "location": "lokalizacja (miasto, kraj)"
+  "certifications": ["Certyfikat 1", "Certyfikat 2", ...] lub null,
+  "languages": [
+    {
+      "language": "Język (np. Polski, Angielski)",
+      "level": "Poziom: Native / Fluent / Advanced / Intermediate / Basic"
+    }
+  ] lub null,
+  "keyAchievements": [
+    "Osiągnięcie 1 - konkretny, mierzalny wynik",
+    "Osiągnięcie 2 - konkretny, mierzalny wynik",
+    "Osiągnięcie 3 - konkretny, mierzalny wynik"
+  ] lub null,
+  "linkedinUrl": "https://linkedin.com/in/... (jeśli dostępny)" lub null,
+  "location": "Miasto, Kraj" lub null
 }
 
-Jeśli jakiejś informacji nie ma w CV, użyj null lub pustej tablicy.
-Zwróć TYLKO JSON, bez dodatkowego tekstu.`;
+WAŻNE:
+- Jeśli jakiejś informacji nie ma w CV, użyj null lub pustej tablicy []
+- Zwróć TYLKO poprawny JSON, bez dodatkowego tekstu ani komentarzy
+- Upewnij się że JSON jest poprawnie sformatowany (prawidłowe cudzysłowy, przecinki, etc.)`;
 
     const result = await openai.responses.create({
       model: AI_MODEL,

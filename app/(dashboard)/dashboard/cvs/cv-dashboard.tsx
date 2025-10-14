@@ -11,8 +11,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/table';
-import { Badge } from '@/components/badge';
-import { Mail, RefreshCw, FileText, CheckCircle, XCircle, Clock, Loader2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/dialog';
+import { StatusBadge } from '@/components/status-badge';
+import { LoadingSpinner } from '@/components/loading-spinner';
+import { EmptyState } from '@/components/empty-state';
+import { StatCard, StatCardGrid } from '@/components/stat-card';
+import { Mail, RefreshCw, FileText, Loader2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface SyncStatus {
@@ -40,6 +51,8 @@ export default function CVDashboard() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -155,47 +168,38 @@ export default function CVDashboard() {
     }
   };
 
-  const getStatusBadge = (status: string, score?: number) => {
-    switch (status) {
-      case 'processed':
-        return (
-          <Badge variant="default" className="gap-1">
-            <CheckCircle className="h-3 w-3" />
-            Przetworzono {score && `(${score}%)`}
-          </Badge>
-        );
-      case 'pending':
-        return (
-          <Badge variant="secondary" className="gap-1">
-            <Clock className="h-3 w-3" />
-            Oczekuje
-          </Badge>
-        );
-      case 'processing':
-        return (
-          <Badge variant="secondary" className="gap-1">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Przetwarzanie
-          </Badge>
-        );
-      case 'rejected':
-        return (
-          <Badge variant="destructive" className="gap-1">
-            <XCircle className="h-3 w-3" />
-            Odrzucono
-          </Badge>
-        );
-      case 'error':
-        return (
-          <Badge variant="destructive" className="gap-1">
-            <XCircle className="h-3 w-3" />
-            Błąd
-          </Badge>
-        );
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  const handleDeleteAllCVs = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch('/api/cvs', {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: 'Usunięto wszystkie CV',
+          description: `Usunięto ${data.deletedCount} CV i ${data.filesDeleted} plików`,
+        });
+        setShowDeleteDialog(false);
+        fetchSyncStatus();
+        fetchCVs();
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      console.error('Error deleting CVs:', error);
+      toast({
+        title: 'Błąd usuwania',
+        description: error.message || 'Nie udało się usunąć CV',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
+
 
   return (
     <div className="space-y-6">
@@ -258,20 +262,23 @@ export default function CVDashboard() {
           </div>
 
           {syncStatus?.connected && (
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="border rounded-lg p-3">
-                <p className="text-sm text-muted-foreground">Wszystkie CV</p>
-                <p className="text-2xl font-bold">{syncStatus.totalCVs}</p>
-              </div>
-              <div className="border rounded-lg p-3">
-                <p className="text-sm text-muted-foreground">Oczekujące</p>
-                <p className="text-2xl font-bold">{syncStatus.pendingCVs}</p>
-              </div>
-              <div className="border rounded-lg p-3">
-                <p className="text-sm text-muted-foreground">Przetworzone</p>
-                <p className="text-2xl font-bold">{syncStatus.processedCVs}</p>
-              </div>
-            </div>
+            <StatCardGrid columns={3} className="mt-4">
+              <StatCard
+                title="Wszystkie CV"
+                value={syncStatus.totalCVs}
+                color="primary"
+              />
+              <StatCard
+                title="Oczekujące"
+                value={syncStatus.pendingCVs}
+                color="warning"
+              />
+              <StatCard
+                title="Przetworzone"
+                value={syncStatus.processedCVs}
+                color="success"
+              />
+            </StatCardGrid>
           )}
 
           {syncStatus?.lastSyncAt && (
@@ -286,12 +293,27 @@ export default function CVDashboard() {
       {/* CVs Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Lista CV</CardTitle>
-          <CardDescription>
-            {cvs.length === 0
-              ? 'Brak CV. Rozpocznij synchronizację z Gmail.'
-              : `Znaleziono ${cvs.length} CV`}
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Lista CV</CardTitle>
+              <CardDescription>
+                {cvs.length === 0
+                  ? 'Brak CV. Rozpocznij synchronizację z Gmail.'
+                  : `Znaleziono ${cvs.length} CV`}
+              </CardDescription>
+            </div>
+            {cvs.length > 0 && (
+              <Button
+                onClick={() => setShowDeleteDialog(true)}
+                variant="destructive"
+                size="sm"
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Usuń wszystkie
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {cvs.length > 0 ? (
@@ -314,7 +336,7 @@ export default function CVDashboard() {
                       {cv.emailSubject}
                     </TableCell>
                     <TableCell>
-                      {getStatusBadge(cv.status, cv.aiValidationScore)}
+                      <StatusBadge status={cv.status as any} showIcon />
                     </TableCell>
                     <TableCell className="text-sm">
                       {new Date(cv.uploadedAt).toLocaleDateString('pl-PL')}
@@ -324,13 +346,53 @@ export default function CVDashboard() {
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-10 text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Brak CV do wyświetlenia</p>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title="Brak CV"
+              description="Rozpocznij synchronizację z Gmail aby automatycznie pobrać CV z wiadomości"
+            />
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Usunąć wszystkie CV?</DialogTitle>
+            <DialogDescription>
+              Ta akcja nie może być cofnięta. Zostaną usunięte wszystkie CV ({cvs.length}) wraz z plikami z dysku.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={isDeleting}
+            >
+              Anuluj
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAllCVs}
+              disabled={isDeleting}
+              className="gap-2"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Usuwanie...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Usuń wszystkie
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

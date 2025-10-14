@@ -29,12 +29,19 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json().catch(() => ({}));
-    const { maxResults = 50, query } = body;
+    const {
+      maxResults = 50,
+      query,
+      useSmartFiltering = true,
+      filterThreshold = 10, // Low threshold: permissive filtering
+    } = body;
 
-    // Sync emails
+    // Sync emails with intelligent filtering
     const result = await syncGmailCVs(dbUser.id, team.id, {
       maxResults,
       query,
+      useSmartFiltering,
+      filterThreshold,
     });
 
     return NextResponse.json({

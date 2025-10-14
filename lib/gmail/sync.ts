@@ -4,17 +4,25 @@ import { db } from '../db/drizzle';
 import { cvs } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { saveFile } from '../storage/file-storage';
+import {
+  buildCVSearchQuery,
+  isCVCandidate,
+  extractEmailBody,
+} from './cv-filters';
 
 export interface SyncOptions {
   maxResults?: number;
   query?: string;
   includeSpamTrash?: boolean;
+  useSmartFiltering?: boolean; // New: enable intelligent CV filtering
+  filterThreshold?: number; // New: minimum score threshold (default: 30)
 }
 
 export interface SyncResult {
   totalMessages: number;
   pdfAttachments: number;
   newCVs: number;
+  filteredOut: number; // New: number of PDFs filtered out by smart filtering
   errors: string[];
 }
 
@@ -28,14 +36,17 @@ export async function syncGmailCVs(
 ): Promise<SyncResult> {
   const {
     maxResults = 50,
-    query = 'has:attachment filename:pdf',
+    query = buildCVSearchQuery(), // Use intelligent CV query by default
     includeSpamTrash = false,
+    useSmartFiltering = true, // Enable smart filtering by default
+    filterThreshold = 10, // Low threshold: only block blacklisted files
   } = options;
 
   const result: SyncResult = {
     totalMessages: 0,
     pdfAttachments: 0,
     newCVs: 0,
+    filteredOut: 0,
     errors: [],
   };
 
@@ -57,7 +68,15 @@ export async function syncGmailCVs(
     // Process each message
     for (const message of messages) {
       try {
-        await processMessage(gmail, message.id!, userId, teamId, result);
+        await processMessage(
+          gmail,
+          message.id!,
+          userId,
+          teamId,
+          result,
+          useSmartFiltering,
+          filterThreshold
+        );
       } catch (error) {
         console.error(`Error processing message ${message.id}:`, error);
         result.errors.push(`Message ${message.id}: ${error}`);
@@ -83,7 +102,9 @@ async function processMessage(
   messageId: string,
   userId: number,
   teamId: number,
-  result: SyncResult
+  result: SyncResult,
+  useSmartFiltering: boolean = true,
+  filterThreshold: number = 30
 ): Promise<void> {
   // Check if message already processed
   const existing = await db
@@ -112,6 +133,9 @@ async function processMessage(
   const dateStr = headers.find((h) => h.name?.toLowerCase() === 'date')?.value;
   const emailDate = dateStr ? new Date(dateStr) : new Date();
 
+  // Extract email body for smart filtering
+  const emailBody = useSmartFiltering ? extractEmailBody(payload) : '';
+
   // Find PDF attachments
   const attachments = findAttachments(payload);
   const pdfAttachments = attachments.filter(
@@ -125,7 +149,37 @@ async function processMessage(
   // Process each PDF attachment
   for (const attachment of pdfAttachments) {
     try {
-      // Download attachment
+      // === PRE-FILTERING: Check if this attachment is likely a CV ===
+      if (useSmartFiltering) {
+        const candidateScore = isCVCandidate(
+          subject,
+          from,
+          attachment.filename || 'unknown.pdf',
+          undefined, // File size not available yet (would need to download first)
+          emailBody
+        );
+
+        // Log filtering decision
+        console.log(
+          `[CV Filter] ${attachment.filename} - Score: ${candidateScore.score}/100`
+        );
+        console.log(`[CV Filter] Reasons:\n${candidateScore.reasons.join('\n')}`);
+
+        // Skip if score is below threshold
+        if (!candidateScore.shouldDownload || candidateScore.score < filterThreshold) {
+          result.filteredOut++;
+          console.log(
+            `[CV Filter] ❌ SKIPPED: ${attachment.filename} (score: ${candidateScore.score})`
+          );
+          continue; // Skip this attachment
+        }
+
+        console.log(
+          `[CV Filter] ✅ DOWNLOADING: ${attachment.filename} (score: ${candidateScore.score})`
+        );
+      }
+
+      // Download attachment (only if passed filtering)
       const attachmentData = await gmail.users.messages.attachments.get({
         userId: 'me',
         messageId: messageId,

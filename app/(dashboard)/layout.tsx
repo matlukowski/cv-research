@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, Suspense } from 'react';
 import { Button } from '@/components/button';
-import { CircleIcon, Home } from 'lucide-react';
+import { Sparkles, Home } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,7 @@ function UserMenu() {
       <>
         <Link
           href="/pricing"
-          className="text-sm font-medium text-gray-700 hover:text-gray-900"
+          className="text-sm font-medium text-muted-foreground hover:text-primary-600 transition-colors"
         >
           Pricing
         </Link>
@@ -76,11 +76,13 @@ function UserMenu() {
 
 function Header() {
   return (
-    <header className="border-b border-gray-200">
+    <header className="border-b border-primary-100 dark:border-primary-900/20 bg-gradient-to-b from-white to-primary-50/30 dark:from-gray-950 dark:to-primary-950/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-        <Link href="/" className="flex items-center">
-          <CircleIcon className="h-6 w-6 text-orange-500" />
-          <span className="ml-2 text-xl font-semibold text-gray-900">Your SaaS</span>
+        <Link href="/" className="flex items-center gap-2 group">
+          <Sparkles className="h-6 w-6 text-primary-600 group-hover:text-secondary-600 transition-colors" />
+          <span className="text-xl font-bold bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent">
+            AI CV Match
+          </span>
         </Link>
         <div className="flex items-center space-x-4">
           <Suspense fallback={<div className="h-9" />}>

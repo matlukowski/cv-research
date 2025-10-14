@@ -24,7 +24,7 @@ export default function DashboardLayout({
   return (
     <div className="flex flex-col min-h-[calc(100dvh-68px)] max-w-7xl mx-auto w-full">
       {/* Mobile header */}
-      <div className="lg:hidden flex items-center justify-between bg-white border-b border-gray-200 p-4">
+      <div className="lg:hidden flex items-center justify-between bg-white/95 backdrop-blur-sm border-b border-primary-100 dark:border-primary-900/20 p-4">
         <div className="flex items-center">
           <span className="font-medium">Dashboard</span>
         </div>
@@ -41,7 +41,7 @@ export default function DashboardLayout({
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside
-          className={`w-64 bg-white lg:bg-gray-50 border-r border-gray-200 lg:block ${
+          className={`w-64 bg-white lg:bg-gradient-to-b lg:from-primary-50/30 lg:to-white dark:lg:from-primary-950/10 dark:lg:to-gray-950 border-r border-primary-100 dark:border-primary-900/20 lg:block ${
             isSidebarOpen ? 'block' : 'hidden'
           } lg:relative absolute inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -51,9 +51,9 @@ export default function DashboardLayout({
             {navItems.map((item) => (
               <Link key={item.href} href={item.href} passHref>
                 <Button
-                  variant={pathname === item.href ? 'secondary' : 'ghost'}
+                  variant={pathname === item.href ? 'default' : 'ghost'}
                   className={`shadow-none my-1 w-full justify-start ${
-                    pathname === item.href ? 'bg-gray-100' : ''
+                    pathname === item.href ? '' : 'hover:bg-primary-50/50 dark:hover:bg-primary-950/30'
                   }`}
                   onClick={() => setIsSidebarOpen(false)}
                 >

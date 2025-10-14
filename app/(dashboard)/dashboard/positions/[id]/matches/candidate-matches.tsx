@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/card';
 import { Button } from '@/components/button';
-import { Badge } from '@/components/badge';
-import { Users, Loader2, Mail, Phone, MapPin, Sparkles, CheckCircle, X } from 'lucide-react';
+import { ScoreBadge } from '@/components/score-badge';
+import { MatchQualityBadge } from '@/components/status-badge';
+import { EmptyState } from '@/components/empty-state';
+import { LoadingSpinner } from '@/components/loading-spinner';
+import { Users, Mail, Phone, MapPin, Sparkles, CheckCircle, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -98,22 +101,15 @@ export default function CandidateMatches({ positionId }: { positionId: number })
     }
   };
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-600 bg-green-50';
-    if (score >= 60) return 'text-blue-600 bg-blue-50';
-    if (score >= 40) return 'text-yellow-600 bg-yellow-50';
-    return 'text-red-600 bg-red-50';
-  };
-
-  const getScoreBadge = (score: number) => {
-    if (score >= 80) return { text: 'Doskonale dopasowany', variant: 'default' as const };
-    if (score >= 60) return { text: 'Dobrze dopasowany', variant: 'default' as const };
-    if (score >= 40) return { text: 'Średnio dopasowany', variant: 'secondary' as const };
-    return { text: 'Słabo dopasowany', variant: 'destructive' as const };
+  const getMatchQuality = (score: number): 'excellent' | 'good' | 'medium' | 'low' => {
+    if (score >= 86) return 'excellent';
+    if (score >= 71) return 'good';
+    if (score >= 51) return 'medium';
+    return 'low';
   };
 
   if (!position) {
-    return <div>Ładowanie...</div>;
+    return <LoadingSpinner size="lg" text="Ładowanie stanowiska..." />;
   }
 
   return (
@@ -166,35 +162,32 @@ export default function CandidateMatches({ positionId }: { positionId: number })
 
       {/* Matches Results */}
       {matches.length === 0 && hasResults && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-10">
-            <Users className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Brak dopasowanych kandydatów</h3>
-            <p className="text-muted-foreground text-center">
-              Nie znaleziono kandydatów spełniających wymagania
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Users}
+          title="Brak dopasowanych kandydatów"
+          description="Nie znaleziono kandydatów spełniających wymagania dla tego stanowiska"
+          action={{
+            label: "Znajdź kandydatów",
+            onClick: () => handleMatch(false)
+          }}
+        />
       )}
 
       {matches.length > 0 && (
         <div className="space-y-4">
           {matches.map((match, index) => {
-            const scoreBadge = getScoreBadge(match.matchScore);
+            const matchQuality = getMatchQuality(match.matchScore);
             return (
               <Card key={match.candidateId}>
                 <CardHeader>
                   <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`flex items-center justify-center w-16 h-16 rounded-full ${getScoreColor(
-                          match.matchScore
-                        )}`}
-                      >
-                        <span className="text-2xl font-bold">
-                          {match.matchScore}
-                        </span>
-                      </div>
+                    <div className="flex items-center gap-6">
+                      <ScoreBadge
+                        score={match.matchScore}
+                        size="lg"
+                        showLabel={false}
+                        animated={true}
+                      />
                       <div>
                         <CardTitle>
                           #{index + 1} {match.candidateName}
@@ -221,7 +214,7 @@ export default function CandidateMatches({ positionId }: { positionId: number })
                         </CardDescription>
                       </div>
                     </div>
-                    <Badge variant={scoreBadge.variant}>{scoreBadge.text}</Badge>
+                    <MatchQualityBadge quality={matchQuality} score={match.matchScore} />
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">

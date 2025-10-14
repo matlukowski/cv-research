@@ -324,8 +324,10 @@ export const candidates = pgTable('candidates', {
   lastName: varchar('last_name', { length: 100 }),
   email: varchar('email', { length: 255 }),
   phone: varchar('phone', { length: 50 }),
-  summary: text('summary'), // AI-generated summary
-  skills: jsonb('skills').$type<string[]>(), // array of skills
+  summary: text('summary'), // AI-generated summary (4-6 sentences)
+  yearsOfExperience: integer('years_of_experience'), // Total years of professional experience
+  technicalSkills: jsonb('technical_skills').$type<string[]>(), // Technical/hard skills
+  softSkills: jsonb('soft_skills').$type<string[]>(), // Soft skills
   experience: jsonb('experience').$type<{
     company: string;
     position: string;
@@ -339,6 +341,12 @@ export const candidates = pgTable('candidates', {
     field: string;
     graduationYear?: string;
   }[]>(),
+  certifications: jsonb('certifications').$type<string[]>(), // Professional certifications
+  languages: jsonb('languages').$type<{
+    language: string;
+    level: string; // e.g., "Native", "Fluent", "Intermediate", "Basic"
+  }[]>(),
+  keyAchievements: jsonb('key_achievements').$type<string[]>(), // Top 3-5 achievements
   linkedinUrl: varchar('linkedin_url', { length: 500 }),
   location: varchar('location', { length: 200 }),
   createdAt: timestamp('created_at').notNull().defaultNow(),

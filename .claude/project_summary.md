@@ -67,6 +67,7 @@ This project is an advanced **AI-powered Applicant Tracking System (ATS)** built
 - **Radix UI** - Unstyled, accessible components
 - **Lucide React** - Icon library
 - **class-variance-authority** - Variant styling utilities
+  - Button component: Fixed ghost variant hover (visible text on light backgrounds)
 
 ### Utilities & Libraries
 - **Zod** - Schema validation and type inference
@@ -93,8 +94,12 @@ cv research/
 │   │   ├── dashboard/
 │   │   │   ├── cvs/             # CV management pages
 │   │   │   ├── positions/       # Job positions pages
-│   │   │   │   ├── [id]/matches/  # Candidate matching
-│   │   │   │   └── new/         # Create new position
+│   │   │   │   ├── [id]/
+│   │   │   │   │   ├── matches/ # Candidate matching results
+│   │   │   │   │   └── edit/    # Edit page (optional, modal preferred)
+│   │   │   │   ├── new/         # Create new position form
+│   │   │   │   ├── page.tsx     # Positions list
+│   │   │   │   └── positions-list.tsx # List component with modals
 │   │   │   └── settings/        # User settings
 │   │   ├── pricing/             # Pricing & subscription
 │   │   └── layout.tsx           # Dashboard layout with header
@@ -142,12 +147,15 @@ cv research/
 │   │   ├── payment.ts           # Payment validation
 │   │   └── common.ts            # Common validators
 │   └── utils/                   # Utility functions
-│       └── encryption.ts        # Token encryption
+│       ├── encryption.ts        # Token encryption
+│       └── text-formatter.tsx   # Text formatting (lists, headers)
 ├── components/                  # React components
 │   ├── ui/                      # shadcn/ui components
 │   ├── button.tsx
 │   ├── card.tsx
+│   ├── dialog.tsx               # Modal/Dialog component (Radix UI)
 │   ├── input.tsx
+│   ├── label.tsx
 │   └── ...
 ├── docs/                        # Documentation
 │   ├── features.md
@@ -206,23 +214,67 @@ cv research/
 1. User connects Gmail account via OAuth 2.0
 2. Application requests read-only access to Gmail
 3. Tokens (access + refresh) are encrypted and stored
-4. Sync process:
-   - Searches for emails with PDF attachments
-   - Filters by query: `has:attachment filename:pdf`
-   - Downloads PDF attachments
-   - Extracts metadata (sender, subject, date)
-   - Stores files locally
-   - Creates CV records with status: `pending`
+4. **Intelligent Sync Process** (3-layer filtering):
+
+   **LAYER 1: Smart Gmail Query** (BEFORE fetching)
+   - Uses intelligent search query with CV keywords in multiple languages
+   - Polish: cv, życiorys, aplikacja, kandydat, rekrutacja
+   - English: cv, resume, application, curriculum
+   - German: lebenslauf, bewerbung
+   - Query: `has:attachment filename:pdf (filename:(cv OR resume...) OR subject:(aplikacja OR job...))`
+
+   **LAYER 2: Pre-filtering** (BEFORE downloading attachment)
+   - **SIMPLIFIED & PERMISSIVE** - Focus on blacklists, not quality scoring
+   - Philosophy: "Better to download 5 false positives than miss 1 real CV"
+   - **Blacklists** (immediate rejection):
+     - Senders: noreply@, invoice@, billing@, newsletter@
+     - Filenames: invoice, faktura, contract, report
+     - Subjects: invoice, payment, newsletter
+   - **Positive signals** (simplified scoring):
+     - Has "cv" or "resume" in filename → score = 100 (auto-accept)
+     - Has CV keywords in subject → score = 80
+     - Matches name pattern (Jan_Kowalski.pdf) → score = 70
+     - No blacklist, no CV keywords → score = 50 (give AI a chance)
+   - **Threshold: 10 points** (very permissive - almost everything passes)
+   - Logs all decisions for debugging
+
+   **LAYER 3: AI Validation** (AFTER download)
+   - Final verification using GPT model
+   - See "AI-Powered CV Processing" section
+
+5. Downloads only likely CV candidates
+6. Extracts metadata (sender, subject, date)
+7. Stores files locally
+8. Creates CV records with status: `pending`
 
 **Key Files**:
 - `lib/gmail/auth.ts` - OAuth flow
-- `lib/gmail/sync.ts` - Email synchronization
+- `lib/gmail/cv-filters.ts` - **NEW: Intelligent CV filtering logic**
+- `lib/gmail/sync.ts` - Email synchronization with pre-filtering
 - `app/api/gmail/connect/route.ts` - OAuth initiation
 - `app/api/gmail/callback/route.ts` - OAuth callback
-- `app/api/gmail/sync/route.ts` - Manual sync trigger
+- `app/api/gmail/sync/route.ts` - Manual sync trigger with filtering options
+
+**Filtering Options** (API parameters):
+- `useSmartFiltering` (boolean, default: true) - Enable/disable intelligent filtering
+- `filterThreshold` (number, default: 10) - Minimum score to download (0-100, very permissive)
+- `query` (string) - Custom Gmail search query (overrides smart query)
+
+**Filtering Philosophy**:
+- **Permissive approach**: Don't judge CV quality, just filter obvious non-CV
+- Only rejects blacklisted items (invoices, newsletters, system emails)
+- Any file with "CV" in name/subject gets score 100 → always downloaded
+- Files without CV keywords still get score 50 → downloaded (AI verifies)
+- Focus: High recall (don't miss CVs), AI handles precision
 
 **Database Tables**:
 - `gmail_connections` - Stores OAuth tokens and connection status
+
+**Performance**:
+- **Before filtering**: ~49 PDFs downloaded, ~2% accuracy (1 CV, 48 non-CV)
+- **After simplification**: Downloads all potential CVs, rejects only obvious non-CV
+- Reduces false negatives (missed CVs) to near zero
+- AI validation (Layer 3) handles final quality check
 
 ---
 
@@ -254,12 +306,20 @@ cv research/
 
 3. **Data Extraction** (AI Step 2)
    - Model: GPT-5 mini (medium reasoning effort)
-   - Task: Extract structured candidate data
+   - Task: Extract structured candidate data with enhanced AI processing
    - Extracted fields:
      - Personal: firstName, lastName, email, phone, location
-     - Professional: summary, skills, experience, education
+     - Professional Summary: 4-6 sentence detailed summary including years of experience, specialization, top skills, main achievement, seniority level
+     - Skills: Split into technicalSkills (programming, tools) and softSkills (communication, leadership)
+     - Experience: company, position, dates (YYYY-MM format), professional description
+     - Education: institution, degree, field, graduation year
+     - Additional: yearsOfExperience (calculated), certifications, languages (with proficiency levels), keyAchievements (top 3-5)
      - Social: linkedinUrl
-   - Creates `candidates` record
+   - **Data Normalization**:
+     - Phone numbers: International format (+XX XXX XXX XXX)
+     - Skills: Capitalized, standardized names
+     - Dates: Consistent YYYY-MM format
+   - Creates `candidates` record with enriched data
    - Links CV to candidate
    - Status updated to: `processed`
 
@@ -290,15 +350,45 @@ cv research/
   - Responsibilities, location
   - Employment type (full-time, part-time, contract)
   - Salary range
-- Edit and update positions
+- Edit and update positions via modal
 - Close/archive positions
 - Status management: `active`, `closed`, `draft`
 
+**New Modal-Based Workflow**:
+1. **View Modal** (click on position card):
+   - Full position preview with formatted text
+   - Intelligent text formatting:
+     - Bullet lists (-, *, •)
+     - Numbered lists (1., 2., 3.)
+     - Section headers (UPPERCASE or ending with :)
+     - Proper spacing and indentation
+   - "Close" and "View Candidates" buttons
+
+2. **Edit Modal** (click edit button):
+   - Full edit form with all fields
+   - Textarea for long text (description, requirements, responsibilities)
+   - Input for short fields (location, salary)
+   - Select for employment type and status
+   - "Save Changes" button with API call
+   - "Cancel" button
+   - No page navigation required
+
+**Text Formatting Utility**:
+- `lib/utils/text-formatter.tsx` - Smart text formatting
+  - Detects and formats lists (bullet and numbered)
+  - Recognizes section headers
+  - Preserves whitespace and structure
+  - Renders as React components with proper CSS
+  - Used in view modal for better readability
+
 **Key Files**:
 - `app/(dashboard)/dashboard/positions/page.tsx` - List view
+- `app/(dashboard)/dashboard/positions/positions-list.tsx` - Main component with modals
 - `app/(dashboard)/dashboard/positions/new/page.tsx` - Create form
+- `app/(dashboard)/dashboard/positions/[id]/edit/` - Standalone edit page (optional, replaced by modal)
 - `app/api/positions/route.ts` - CRUD operations
 - `app/api/positions/[id]/route.ts` - Single position operations
+- `lib/utils/text-formatter.tsx` - Text formatting utility
 
 **Database Tables**:
 - `job_positions` - Job posting details
@@ -432,10 +522,15 @@ cv research/
 - firstName, lastName: varchar(100)
 - email: varchar(255)
 - phone: varchar(50)
-- summary: text (AI-generated)
-- skills: jsonb (string[])
-- experience: jsonb (array of objects)
-- education: jsonb (array of objects)
+- summary: text (AI-generated professional summary, 4-6 sentences)
+- yearsOfExperience: integer (total years of work experience)
+- technicalSkills: jsonb (string[] - technical/hard skills)
+- softSkills: jsonb (string[] - soft skills)
+- experience: jsonb (array of objects with company, position, dates, description)
+- education: jsonb (array of objects with institution, degree, field, year)
+- certifications: jsonb (string[] - professional certifications)
+- languages: jsonb (array of objects with language, level)
+- keyAchievements: jsonb (string[] - top 3-5 achievements)
 - linkedinUrl: varchar(500)
 - location: varchar(200)
 - createdAt, updatedAt: timestamp
@@ -530,23 +625,49 @@ cv research/
 8. User redirected back to dashboard
 ```
 
-### 3. CV Synchronization
+### 3. CV Synchronization (with Intelligent Filtering)
 ```
 1. Manual trigger: User clicks "Sync Now"
    OR Automated: Scheduled job (cron)
 2. API call to /api/gmail/sync
+   - Optional params: useSmartFiltering (default: true), filterThreshold (default: 30)
 3. Fetch authenticated Gmail client
-4. Search for emails: "has:attachment filename:pdf"
+4. LAYER 1 - Smart Gmail Query:
+   - Build intelligent query with CV keywords (multi-language)
+   - Query: "has:attachment filename:pdf (filename:(cv OR resume...) OR subject:(aplikacja OR job...))"
+   - Gmail returns only relevant messages
 5. For each message:
-   a. Check if already processed (gmail_message_id)
-   b. Extract email metadata (subject, sender, date)
-   c. Find PDF attachments
-   d. Download attachment data (base64)
-   e. Decode and save file to storage
-   f. Create CV record (status: pending)
+   a. Check if already processed (gmail_message_id) → Skip if exists
+   b. Fetch full message metadata
+   c. Extract: subject, sender, date, email body
+   d. Find PDF attachments
+   e. LAYER 2 - Pre-filtering (SIMPLIFIED - BEFORE download):
+      - Check blacklists (noreply@, invoice, faktura, etc.) → Reject if match
+      - Simple scoring:
+        * Has "cv"/"resume" in filename → score = 100 (auto-accept)
+        * Has CV keywords in subject → score = 80
+        * Matches name pattern (Jan_Kowalski.pdf) → score = 70
+        * No blacklist, no keywords → score = 50 (give AI a chance)
+      - Log filtering decision
+      - Skip only if score < 10 (very permissive threshold)
+   f. Download attachment ONLY if passed filtering (base64)
+   g. Decode and save file to storage
+   h. Create CV record (status: pending)
 6. Update lastSyncAt timestamp
-7. Return sync results (counts, errors)
+7. Return sync results:
+   - totalMessages: Messages found
+   - pdfAttachments: Total PDFs found
+   - filteredOut: PDFs skipped by filtering
+   - newCVs: PDFs downloaded and saved
+   - errors: Any errors during sync
 ```
+
+**Filtering Performance**:
+- Without filtering: Downloads all 49 PDFs (2% CV rate)
+- With permissive filtering: Rejects only obvious non-CV (invoices, newsletters)
+- Downloads all potential CVs (high recall)
+- AI validation (Layer 3) provides final quality check (precision)
+- Result: No missed CVs, minimal false positives reaching AI
 
 ### 4. CV Processing
 ```
@@ -574,7 +695,9 @@ cv research/
 10. Return processing result
 ```
 
-### 5. Job Position Creation
+### 5. Job Position Management
+
+#### Creating a Position
 ```
 1. User navigates to /dashboard/positions/new
 2. Fill out job position form:
@@ -586,6 +709,38 @@ cv research/
 5. Create job_positions record
 6. Log activity
 7. Redirect to position detail page
+```
+
+#### Viewing Position Details (New Modal-Based)
+```
+1. User clicks on position card in list
+2. View modal opens with formatted text:
+   - Text formatter detects lists and headers
+   - Renders bullet points, numbered lists
+   - Displays section headers with proper styling
+   - Shows all position details in readable format
+3. User can:
+   - Close modal
+   - Navigate to "View Candidates" page
+   - Click edit button to switch to edit mode
+```
+
+#### Editing a Position (New Modal-Based)
+```
+1. User clicks edit button (pencil icon) on position card
+2. Edit modal opens with pre-filled form:
+   - All fields populated with current data
+   - Textarea for long fields (description, requirements)
+   - Input for short fields (location, salary)
+   - Select dropdowns for type and status
+3. User modifies desired fields
+4. Clicks "Save Changes" button
+5. API call (PUT /api/positions/[id])
+6. Validates data with Zod schema
+7. Updates job_positions record
+8. Modal closes, list refreshes
+9. Toast notification shows success/error
+10. No page navigation required - all in modal
 ```
 
 ### 6. Candidate Matching
@@ -802,6 +957,25 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 - Client components only where needed
 - Suspense boundaries for loading states
 
+### Text Formatting System
+- **Purpose**: Intelligently format plain text job descriptions into readable, structured content
+- **Location**: `lib/utils/text-formatter.tsx`
+- **Features**:
+  - Automatic list detection (bullet and numbered)
+  - Section header recognition (UPPERCASE or ending with `:`)
+  - Proper spacing and indentation
+  - React component rendering with CSS classes
+- **Usage**: Applied to job position descriptions, requirements, and responsibilities in view modal
+- **Algorithm**:
+  1. Split text into lines
+  2. Detect patterns:
+     - Bullet lists: `- `, `* `, `• `
+     - Numbered lists: `1. `, `2. `, `3. `
+     - Headers: UPPERCASE text or lines ending with `:`
+  3. Group consecutive list items
+  4. Render with appropriate HTML tags (`<ul>`, `<ol>`, `<h4>`, `<p>`)
+  5. Apply Tailwind CSS classes for styling
+
 ---
 
 ## AI Integration Details
@@ -986,13 +1160,53 @@ MIT License - See LICENSE file for details
 ## Project Status
 
 **Version**: 1.0.0 (Development)
-**Last Updated**: 2025-01-14
+**Last Updated**: 2025-01-15
 **Maintainer**: Development Team
+
+**Recent Changes**:
+- **Simplified & Permissive CV Filtering** (2025-10-14 - UPDATED):
+  - NEW FILE: `lib/gmail/cv-filters.ts` - Blacklist-focused filtering (not quality scoring)
+  - Philosophy: "Better 5 false positives than 1 missed CV"
+  - Layer 1: Smart Gmail query with CV keywords (Polish, English, German)
+  - Layer 2: Simplified pre-filtering:
+    - Blacklists reject obvious non-CV (invoices, newsletters)
+    - Any file with "cv"/"resume" in name → score = 100 (auto-accept)
+    - No CV keywords but not blacklisted → score = 50 (let AI verify)
+    - Threshold lowered from 30 → 10 (very permissive)
+  - Layer 3: AI validation (existing system) - final quality check
+  - Result: High recall (doesn't miss real CVs), AI handles precision
+  - Configurable via API: `useSmartFiltering`, `filterThreshold` (default: 10), custom query
+  - Comprehensive logging for debugging filtering decisions
+- **Code Cleanup & Optimization** (2025-10-14):
+  - Fixed missing Loader2 imports in cv-dashboard.tsx and positions-list.tsx
+  - Verified all component files are in use (avatar.tsx, dropdown-menu.tsx, radio-group.tsx - used in layout)
+  - Confirmed all npm dependencies are actively used
+  - All new component files (score-badge, stat-card, status-badge, empty-state, loading-spinner) are properly integrated
+  - Text formatter utility is being used in positions-list modal views
+  - tw-animate-css is used in globals.css for animations
+  - react-pdf NOT directly used (we use pdf-parse for server-side parsing instead)
+- **UI/UX Improvements** (2025-10-14):
+  - Fixed button hover visibility issue in navigation menu (components/button.tsx)
+  - Ghost variant now uses `hover:text-primary` instead of `hover:text-accent-foreground`
+  - Ensures text remains visible on light backgrounds during hover state
+- **Enhanced AI CV Processing** (2025-01-15):
+  - Improved candidate summary generation (4-6 sentences with detailed profile)
+  - Split skills into technicalSkills and softSkills
+  - Added new fields: yearsOfExperience, certifications, languages, keyAchievements
+  - Implemented data normalization (phone, dates, skill names)
+  - Enhanced AI prompt with detailed instructions
+  - Updated database schema with new candidate fields
+- Added modal-based position editing workflow
+- Implemented intelligent text formatting system
+- Enhanced position view modal with formatted content
+- Improved UX - editing without page navigation
 
 **Current Focus**:
 - Core CV processing pipeline
 - AI matching algorithm refinement
 - UI/UX improvements
+- Modal-based workflows for better UX
+- Text formatting and presentation
 - Bug fixes and stability
 
 **Known Issues**:

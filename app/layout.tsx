@@ -6,8 +6,8 @@ import { SWRConfig } from 'swr';
 import { ClerkProvider } from '@clerk/nextjs';
 
 export const metadata: Metadata = {
-  title: 'SaaS Boilerplate - Next.js, Clerk, Stripe',
-  description: 'Modern SaaS starter with authentication, payments, and team management. Built with Next.js 15, Clerk, Stripe, and PostgreSQL.'
+  title: 'AI CV Match - AI-Powered Applicant Tracking System',
+  description: 'Inteligentny system ATS z automatyczną analizą CV przez AI i dopasowaniem kandydatów do stanowisk. Zbieraj CV z Gmail, analizuj przez GPT i znajdź idealnych kandydatów.'
 };
 
 export const viewport: Viewport = {
@@ -25,9 +25,9 @@ export default function RootLayout({
     <ClerkProvider>
       <html
         lang="en"
-        className={`bg-white dark:bg-gray-950 text-black dark:text-white ${manrope.className}`}
+        className={manrope.className}
       >
-        <body className="min-h-[100dvh] bg-gray-50">
+        <body className="min-h-[100dvh] bg-background text-foreground">
           <SWRConfig value={{}}>
             {children}
           </SWRConfig>

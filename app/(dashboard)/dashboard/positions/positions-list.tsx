@@ -4,7 +4,12 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/card';
 import { Button } from '@/components/button';
 import { Badge } from '@/components/badge';
-import { Briefcase, MapPin, Users, Trash2, Edit } from 'lucide-react';
+import { StatusBadge } from '@/components/status-badge';
+import { EmptyState } from '@/components/empty-state';
+import { LoadingSpinner } from '@/components/loading-spinner';
+import { Input } from '@/components/input';
+import { Label } from '@/components/label';
+import { Briefcase, MapPin, Users, Trash2, Edit, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/dialog';
+import { FormattedText } from '@/lib/utils/text-formatter';
 
 interface JobPosition {
   id: number;
@@ -34,7 +40,19 @@ export default function PositionsList() {
   const [positions, setPositions] = useState<JobPosition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPosition, setSelectedPosition] = useState<JobPosition | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    title: '',
+    description: '',
+    requirements: '',
+    responsibilities: '',
+    location: '',
+    employmentType: 'full-time',
+    salaryRange: '',
+    status: 'active',
+  });
   const router = useRouter();
   const { toast } = useToast();
 
@@ -85,39 +103,83 @@ export default function PositionsList() {
   };
 
   const handleCardClick = (position: JobPosition) => {
-    router.push(`/dashboard/positions/${position.id}/matches`);
+    setSelectedPosition(position);
+    setIsViewDialogOpen(true);
   };
 
   const handleEditClick = (e: React.MouseEvent, position: JobPosition) => {
     e.stopPropagation();
     setSelectedPosition(position);
-    setIsDialogOpen(true);
+    setEditFormData({
+      title: position.title || '',
+      description: position.description || '',
+      requirements: position.requirements || '',
+      responsibilities: position.responsibilities || '',
+      location: position.location || '',
+      employmentType: position.employmentType || 'full-time',
+      salaryRange: position.salaryRange || '',
+      status: position.status || 'active',
+    });
+    setIsEditDialogOpen(true);
   };
 
-  const handleEditNavigate = () => {
-    if (selectedPosition) {
-      router.push(`/dashboard/positions/${selectedPosition.id}/edit`);
+  const handleFormChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    setEditFormData({
+      ...editFormData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedPosition) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/positions/${selectedPosition.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      });
+
+      if (response.ok) {
+        toast({
+          title: 'Sukces',
+          description: 'Stanowisko zostało zaktualizowane',
+        });
+        setIsEditDialogOpen(false);
+        fetchPositions();
+      } else {
+        throw new Error('Failed to update position');
+      }
+    } catch (error) {
+      console.error('Error updating position:', error);
+      toast({
+        title: 'Błąd',
+        description: 'Nie udało się zaktualizować stanowiska',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   if (isLoading) {
-    return <div>Ładowanie...</div>;
+    return <LoadingSpinner size="lg" text="Ładowanie stanowisk..." />;
   }
 
   if (positions.length === 0) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center justify-center py-10">
-          <Briefcase className="h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-semibold mb-2">Brak stanowisk</h3>
-          <p className="text-muted-foreground text-center mb-4">
-            Rozpocznij od dodania pierwszego stanowiska pracy
-          </p>
-          <Button asChild>
-            <Link href="/dashboard/positions/new">Dodaj stanowisko</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={Briefcase}
+        title="Brak stanowisk"
+        description="Rozpocznij od dodania pierwszego stanowiska pracy aby znaleźć idealnych kandydatów"
+        action={{
+          label: "Dodaj stanowisko",
+          onClick: () => router.push('/dashboard/positions/new')
+        }}
+      />
     );
   }
 
@@ -143,9 +205,7 @@ export default function PositionsList() {
                   )}
                 </CardDescription>
               </div>
-              <Badge variant={position.status === 'active' ? 'default' : 'secondary'}>
-                {position.status === 'active' ? 'Aktywne' : position.status}
-              </Badge>
+              <StatusBadge status={position.status as any} showIcon />
             </div>
           </CardHeader>
           <CardContent className="flex-1">
@@ -193,48 +253,43 @@ export default function PositionsList() {
       ))}
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      {/* Modal podglądu - po kliknięciu na kartę */}
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{selectedPosition?.title}</DialogTitle>
+            <DialogTitle className="text-xl">{selectedPosition?.title}</DialogTitle>
             <DialogDescription>
-              Szczegóły stanowiska pracy
+              Pełny podgląd stanowiska pracy
             </DialogDescription>
           </DialogHeader>
 
           {selectedPosition && (
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-semibold mb-2">Status</h4>
-                <Badge variant={selectedPosition.status === 'active' ? 'default' : 'secondary'}>
-                  {selectedPosition.status === 'active' ? 'Aktywne' : selectedPosition.status}
-                </Badge>
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={selectedPosition.status as any} showIcon />
+                {selectedPosition.employmentType && (
+                  <Badge variant="outline">{selectedPosition.employmentType}</Badge>
+                )}
               </div>
 
               <div>
-                <h4 className="font-semibold mb-2">Opis</h4>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {selectedPosition.description}
-                </p>
+                <h4 className="font-semibold text-base mb-3 text-foreground">Opis stanowiska</h4>
+                <FormattedText text={selectedPosition.description} />
               </div>
 
               <div>
-                <h4 className="font-semibold mb-2">Wymagania</h4>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {selectedPosition.requirements}
-                </p>
+                <h4 className="font-semibold text-base mb-3 text-foreground">Wymagania</h4>
+                <FormattedText text={selectedPosition.requirements} />
               </div>
 
               {selectedPosition.responsibilities && (
                 <div>
-                  <h4 className="font-semibold mb-2">Obowiązki</h4>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {selectedPosition.responsibilities}
-                  </p>
+                  <h4 className="font-semibold text-base mb-3 text-foreground">Obowiązki</h4>
+                  <FormattedText text={selectedPosition.responsibilities} />
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 pt-2">
                 {selectedPosition.location && (
                   <div>
                     <h4 className="font-semibold mb-2">Lokalizacja</h4>
@@ -245,31 +300,170 @@ export default function PositionsList() {
                   </div>
                 )}
 
-                {selectedPosition.employmentType && (
+                {selectedPosition.salaryRange && (
                   <div>
-                    <h4 className="font-semibold mb-2">Typ zatrudnienia</h4>
-                    <Badge variant="outline">{selectedPosition.employmentType}</Badge>
+                    <h4 className="font-semibold mb-2">Widełki płacowe</h4>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedPosition.salaryRange}
+                    </p>
                   </div>
                 )}
               </div>
-
-              {selectedPosition.salaryRange && (
-                <div>
-                  <h4 className="font-semibold mb-2">Widełki płacowe</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedPosition.salaryRange}
-                  </p>
-                </div>
-              )}
             </div>
           )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>
               Zamknij
             </Button>
-            <Button onClick={handleEditNavigate}>
-              Edytuj stanowisko
+            <Button
+              variant="default"
+              onClick={() => {
+                if (selectedPosition) {
+                  router.push(`/dashboard/positions/${selectedPosition.id}/matches`);
+                }
+              }}
+            >
+              Zobacz kandydatów
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal edycji - po kliknięciu przycisku edytuj */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edytuj stanowisko</DialogTitle>
+            <DialogDescription>
+              Wprowadź zmiany w ogłoszeniu o pracę
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-title">Tytuł stanowiska *</Label>
+              <Input
+                id="edit-title"
+                name="title"
+                value={editFormData.title}
+                onChange={handleFormChange}
+                placeholder="np. Senior Full-Stack Developer"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Opis stanowiska *</Label>
+              <textarea
+                id="edit-description"
+                name="description"
+                value={editFormData.description}
+                onChange={handleFormChange}
+                placeholder="Opisz stanowisko..."
+                required
+                rows={6}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-requirements">Wymagania *</Label>
+              <textarea
+                id="edit-requirements"
+                name="requirements"
+                value={editFormData.requirements}
+                onChange={handleFormChange}
+                placeholder="Wypisz wymagania dla kandydatów..."
+                required
+                rows={6}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-responsibilities">Obowiązki</Label>
+              <textarea
+                id="edit-responsibilities"
+                name="responsibilities"
+                value={editFormData.responsibilities}
+                onChange={handleFormChange}
+                placeholder="Opisz obowiązki na stanowisku..."
+                rows={6}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-location">Lokalizacja</Label>
+                <Input
+                  id="edit-location"
+                  name="location"
+                  value={editFormData.location}
+                  onChange={handleFormChange}
+                  placeholder="np. Warszawa / Remote"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-employmentType">Typ zatrudnienia</Label>
+                <select
+                  id="edit-employmentType"
+                  name="employmentType"
+                  value={editFormData.employmentType}
+                  onChange={handleFormChange}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="full-time">Pełny etat</option>
+                  <option value="part-time">Część etatu</option>
+                  <option value="contract">Kontrakt</option>
+                  <option value="temporary">Tymczasowe</option>
+                  <option value="internship">Staż</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-salaryRange">Widełki płacowe</Label>
+                <Input
+                  id="edit-salaryRange"
+                  name="salaryRange"
+                  value={editFormData.salaryRange}
+                  onChange={handleFormChange}
+                  placeholder="np. 10 000 - 15 000 PLN"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-status">Status</Label>
+                <select
+                  id="edit-status"
+                  name="status"
+                  value={editFormData.status}
+                  onChange={handleFormChange}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="active">Aktywne</option>
+                  <option value="draft">Szkic</option>
+                  <option value="closed">Zamknięte</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isSaving}
+            >
+              Anuluj
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={isSaving} className="gap-2">
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Zapisz zmiany
             </Button>
           </DialogFooter>
         </DialogContent>
