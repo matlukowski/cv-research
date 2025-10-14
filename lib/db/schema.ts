@@ -395,7 +395,8 @@ export const candidateMatches = pgTable('candidate_matches', {
   candidateId: integer('candidate_id').notNull().references(() => candidates.id),
   cvId: integer('cv_id').notNull().references(() => cvs.id),
   matchScore: integer('match_score').notNull(), // 0-100
-  aiAnalysis: text('ai_analysis'), // detailed AI reasoning from GPT-5 mini
+  aiAnalysis: text('ai_analysis'), // detailed AI reasoning (3-4 sentences)
+  summary: text('summary'), // short summary from AI (1-2 sentences)
   strengths: jsonb('strengths').$type<string[]>(), // candidate strengths for this position
   weaknesses: jsonb('weaknesses').$type<string[]>(), // areas for improvement
   createdAt: timestamp('created_at').notNull().defaultNow(),

@@ -232,6 +232,7 @@ async function saveMatchResult(
         .set({
           matchScore: matchResult.matchScore,
           aiAnalysis: matchResult.aiAnalysis,
+          summary: matchResult.summary,
           strengths: matchResult.strengths,
           weaknesses: matchResult.weaknesses,
           updatedAt: new Date(),
@@ -245,6 +246,7 @@ async function saveMatchResult(
         cvId,
         matchScore: matchResult.matchScore,
         aiAnalysis: matchResult.aiAnalysis,
+        summary: matchResult.summary,
         strengths: matchResult.strengths,
         weaknesses: matchResult.weaknesses,
       } as NewCandidateMatch);
@@ -280,7 +282,7 @@ export async function getMatchResultsForPosition(
       aiAnalysis: m.match.aiAnalysis || '',
       strengths: (m.match.strengths as string[]) || [],
       weaknesses: (m.match.weaknesses as string[]) || [],
-      summary: m.match.aiAnalysis?.slice(0, 200) || '', // First 200 chars as summary
+      summary: m.match.summary || m.match.aiAnalysis?.slice(0, 200) || '', // Use full summary from AI
       email: m.candidate.email || undefined,
       phone: m.candidate.phone || undefined,
       location: m.candidate.location || undefined,
