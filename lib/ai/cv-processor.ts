@@ -1,7 +1,7 @@
 'use server';
 
 import { OpenAI } from 'openai';
-import pdfParse from 'pdf-parse';
+import * as pdfParse from 'pdf-parse';
 import { db } from '../db/drizzle';
 import { cvs, candidates, type NewCandidate } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -56,7 +56,9 @@ export interface ExtractedCandidateData {
  */
 export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
-    const data = await pdfParse(buffer);
+    // pdf-parse ESM requires .default for namespace import
+    const parse = (pdfParse as any).default || pdfParse;
+    const data = await parse(buffer);
     return data.text;
   } catch (error) {
     console.error('Error parsing PDF:', error);

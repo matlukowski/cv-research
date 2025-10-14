@@ -23,7 +23,7 @@ import { StatusBadge } from '@/components/status-badge';
 import { LoadingSpinner } from '@/components/loading-spinner';
 import { EmptyState } from '@/components/empty-state';
 import { StatCard, StatCardGrid } from '@/components/stat-card';
-import { Mail, RefreshCw, FileText, Loader2, Trash2 } from 'lucide-react';
+import { Mail, RefreshCw, FileText, Loader2, Trash2, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface SyncStatus {
@@ -50,7 +50,6 @@ export default function CVDashboard() {
   const [cvs, setCvs] = useState<CV[]>([]);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { toast } = useToast();
@@ -137,37 +136,6 @@ export default function CVDashboard() {
     }
   };
 
-  const handleProcessCVs = async () => {
-    setIsProcessing(true);
-    try {
-      const response = await fetch('/api/cvs/process', {
-        method: 'POST',
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        toast({
-          title: 'Przetwarzanie zakończone',
-          description: `Przetworzono: ${data.processed}, Błędy: ${data.errors}`,
-        });
-        fetchSyncStatus();
-        fetchCVs();
-      } else {
-        throw new Error(data.error);
-      }
-    } catch (error: any) {
-      console.error('Error processing CVs:', error);
-      toast({
-        title: 'Błąd przetwarzania',
-        description: error.message || 'Nie udało się przetworzyć CV',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   const handleDeleteAllCVs = async () => {
     setIsDeleting(true);
     try {
@@ -242,21 +210,6 @@ export default function CVDashboard() {
                   )}
                   Synchronizuj CV
                 </Button>
-                {syncStatus.pendingCVs > 0 && (
-                  <Button
-                    onClick={handleProcessCVs}
-                    disabled={isProcessing}
-                    variant="secondary"
-                    className="gap-2"
-                  >
-                    {isProcessing ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileText className="h-4 w-4" />
-                    )}
-                    Przetwórz CV z AI ({syncStatus.pendingCVs})
-                  </Button>
-                )}
               </>
             )}
           </div>
@@ -325,6 +278,7 @@ export default function CVDashboard() {
                   <TableHead>Temat</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Data</TableHead>
+                  <TableHead className="text-right">Akcje</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -340,6 +294,19 @@ export default function CVDashboard() {
                     </TableCell>
                     <TableCell className="text-sm">
                       {new Date(cv.uploadedAt).toLocaleDateString('pl-PL')}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          window.open(`/api/cvs/${cv.id}/download`, '_blank');
+                        }}
+                        className="gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        PDF
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

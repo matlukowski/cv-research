@@ -10,6 +10,7 @@ import {
   type NewCandidateMatch,
 } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
+import { processAllPendingCVs } from './cv-processor';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -56,7 +57,14 @@ export async function matchCandidatesForPosition(
       throw new Error('Job position not found');
     }
 
-    // Get all processed candidates for this team
+    // STEP 1: Auto-process pending CVs before matching
+    console.log('[Matching] Processing pending CVs for team', position.teamId);
+    const processingResult = await processAllPendingCVs(position.teamId);
+    console.log(
+      `[Matching] Processed ${processingResult.processed} CVs, ${processingResult.errors} errors`
+    );
+
+    // STEP 2: Get all processed candidates for this team
     const teamCandidates = await db
       .select()
       .from(candidates)
