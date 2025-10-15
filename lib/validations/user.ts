@@ -20,7 +20,7 @@ export const updateUserSchema = z.object({
 export const deleteUserSchema = z.object({
   userId: z.number().int().positive('Invalid user ID'),
   confirmDelete: z.literal(true, {
-    errorMap: () => ({ message: 'You must confirm deletion' }),
+    message: 'You must confirm deletion',
   }),
 });
 

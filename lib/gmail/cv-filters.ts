@@ -126,14 +126,32 @@ export const FILE_SIZE_CONSTRAINTS = {
 };
 
 /**
+ * Format date for Gmail API query (YYYY/MM/DD)
+ */
+function formatDateForGmail(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}/${month}/${day}`;
+}
+
+/**
  * Build an intelligent Gmail search query for CV emails
  * This is used as the first filtering layer
+ * @param afterDate - Optional date to filter emails from (inclusive)
  */
-export function buildCVSearchQuery(): string {
+export function buildCVSearchQuery(afterDate?: Date): string {
   const filenameTerms = CV_KEYWORDS.filename.map((kw) => `filename:${kw}`).join(' OR ');
   const subjectTerms = CV_KEYWORDS.subject.map((kw) => `"${kw}"`).join(' OR ');
 
-  return `has:attachment filename:pdf (${filenameTerms} OR subject:(${subjectTerms}))`;
+  let query = `has:attachment filename:pdf (${filenameTerms} OR subject:(${subjectTerms}))`;
+
+  // Add date filter if provided
+  if (afterDate) {
+    query = `after:${formatDateForGmail(afterDate)} ${query}`;
+  }
+
+  return query;
 }
 
 /**

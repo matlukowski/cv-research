@@ -16,6 +16,7 @@ export interface SyncOptions {
   includeSpamTrash?: boolean;
   useSmartFiltering?: boolean; // New: enable intelligent CV filtering
   filterThreshold?: number; // New: minimum score threshold (default: 30)
+  syncFromDate?: Date; // Filter emails from this date (inclusive)
 }
 
 export interface SyncResult {
@@ -36,10 +37,11 @@ export async function syncGmailCVs(
 ): Promise<SyncResult> {
   const {
     maxResults = 50,
-    query = buildCVSearchQuery(), // Use intelligent CV query by default
+    query = buildCVSearchQuery(options.syncFromDate), // Use intelligent CV query with optional date filter
     includeSpamTrash = false,
     useSmartFiltering = true, // Enable smart filtering by default
     filterThreshold = 10, // Low threshold: only block blacklisted files
+    syncFromDate,
   } = options;
 
   const result: SyncResult = {
@@ -197,7 +199,7 @@ async function processMessage(
       const fileUrl = await saveFile(buffer, attachment.filename || 'cv.pdf', teamId);
 
       // Save to database (status: pending for AI processing)
-      await db.insert(cvs).values({
+      const [savedCV] = await db.insert(cvs).values({
         teamId,
         fileName: attachment.filename || 'cv.pdf',
         fileUrl,
@@ -208,7 +210,37 @@ async function processMessage(
         emailDate,
         gmailMessageId: messageId,
         status: 'pending', // Will be processed by AI later
-      });
+      }).returning();
+
+      // Detect job position from email content
+      try {
+        const { detectJobPosition } = await import('../ai/job-detector');
+        const { createApplication } = await import('../applications/application-manager');
+
+        const detection = await detectJobPosition(teamId, subject, emailBody);
+
+        console.log(`[Job Detection] CV: ${attachment.filename}`);
+        console.log(`[Job Detection] Position ID: ${detection.jobPositionId || 'None (spontaneous)'}`);
+        console.log(`[Job Detection] Confidence: ${detection.confidence}%`);
+        console.log(`[Job Detection] Reason: ${detection.reason}`);
+
+        // Create application record
+        await createApplication(
+          savedCV.id,
+          detection.jobPositionId,
+          detection.applicationType
+        );
+      } catch (error) {
+        console.error(`Error detecting job position or creating application:`, error);
+        // Don't fail the whole process if job detection fails
+        // Just create a spontaneous application as fallback
+        try {
+          const { createApplication } = await import('../applications/application-manager');
+          await createApplication(savedCV.id, null, 'spontaneous');
+        } catch (fallbackError) {
+          console.error(`Error creating fallback spontaneous application:`, fallbackError);
+        }
+      }
 
       result.newCVs++;
     } catch (error) {
@@ -302,6 +334,7 @@ export async function getSyncStatus(userId: number, teamId: number) {
     connected: true,
     email: connection.email,
     lastSyncAt: connection.lastSyncAt,
+    syncFromDate: connection.syncFromDate,
     totalCVs: allCVs.length,
     pendingCVs: pendingCVs.length,
     processedCVs: processedCVs.length,

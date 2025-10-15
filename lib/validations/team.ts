@@ -30,7 +30,7 @@ export const inviteMemberSchema = z.object({
     .email('Invalid email address')
     .toLowerCase(),
   role: z.enum(['owner', 'member'], {
-    errorMap: () => ({ message: 'Role must be either "owner" or "member"' }),
+    message: 'Role must be either "owner" or "member"',
   }),
   teamId: z.number().int().positive('Invalid team ID'),
 });

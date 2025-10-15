@@ -30,6 +30,7 @@ interface SyncStatus {
   connected: boolean;
   email?: string;
   lastSyncAt?: string;
+  syncFromDate?: string | null;
   totalCVs: number;
   pendingCVs: number;
   processedCVs: number;
@@ -48,10 +49,13 @@ interface CV {
 export default function CVDashboard() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [cvs, setCvs] = useState<CV[]>([]);
+  const [orphanedCount, setOrphanedCount] = useState(0);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCleaningOrphaned, setIsCleaningOrphaned] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [syncFromDate, setSyncFromDate] = useState<string>('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -64,6 +68,12 @@ export default function CVDashboard() {
       const response = await fetch('/api/gmail/sync');
       const data = await response.json();
       setSyncStatus(data.status);
+
+      // Prefill syncFromDate if already set in database
+      if (data.status?.syncFromDate) {
+        const date = new Date(data.status.syncFromDate);
+        setSyncFromDate(date.toISOString().split('T')[0]); // Format: YYYY-MM-DD
+      }
     } catch (error) {
       console.error('Error fetching sync status:', error);
     }
@@ -75,6 +85,7 @@ export default function CVDashboard() {
       if (response.ok) {
         const data = await response.json();
         setCvs(data.cvs || []);
+        setOrphanedCount(data.orphanedCount || 0);
       }
     } catch (error) {
       console.error('Error fetching CVs:', error);
@@ -104,12 +115,36 @@ export default function CVDashboard() {
   };
 
   const handleSyncCVs = async () => {
+    // Validate that syncFromDate is provided
+    if (!syncFromDate) {
+      toast({
+        title: 'Brak daty synchronizacji',
+        description: 'Wybierz datę, od której mają być pobierane wiadomości',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate that date is not in the future
+    const selectedDate = new Date(syncFromDate);
+    if (selectedDate > new Date()) {
+      toast({
+        title: 'Nieprawidłowa data',
+        description: 'Data synchronizacji nie może być w przyszłości',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSyncing(true);
     try {
       const response = await fetch('/api/gmail/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxResults: 50 }),
+        body: JSON.stringify({
+          maxResults: 50,
+          syncFromDate: syncFromDate, // Send date in YYYY-MM-DD format
+        }),
       });
 
       const data = await response.json();
@@ -145,6 +180,13 @@ export default function CVDashboard() {
 
       const data = await response.json();
 
+      if (!response.ok) {
+        // Server returned an error status
+        const errorMessage = data.error || 'Nie udało się usunąć CV';
+        const errorDetails = data.details ? `: ${data.details}` : '';
+        throw new Error(`${errorMessage}${errorDetails}`);
+      }
+
       if (data.success) {
         toast({
           title: 'Usunięto wszystkie CV',
@@ -154,7 +196,7 @@ export default function CVDashboard() {
         fetchSyncStatus();
         fetchCVs();
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Nie udało się usunąć CV');
       }
     } catch (error: any) {
       console.error('Error deleting CVs:', error);
@@ -165,6 +207,43 @@ export default function CVDashboard() {
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleCleanOrphanedCVs = async () => {
+    setIsCleaningOrphaned(true);
+    try {
+      const response = await fetch('/api/cvs/orphaned', {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = data.error || 'Nie udało się wyczyścić rekordów';
+        const errorDetails = data.details ? `: ${data.details}` : '';
+        throw new Error(`${errorMessage}${errorDetails}`);
+      }
+
+      if (data.success) {
+        toast({
+          title: 'Wyczyszczono rekordy',
+          description: `Usunięto ${data.deletedCount} rekordów CV bez plików`,
+        });
+        fetchSyncStatus();
+        fetchCVs();
+      } else {
+        throw new Error(data.error || 'Nie udało się wyczyścić rekordów');
+      }
+    } catch (error: any) {
+      console.error('Error cleaning orphaned CVs:', error);
+      toast({
+        title: 'Błąd czyszczenia',
+        description: error.message || 'Nie udało się wyczyścić rekordów',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCleaningOrphaned(false);
     }
   };
 
@@ -197,11 +276,35 @@ export default function CVDashboard() {
                 Połącz z Gmail
               </Button>
             ) : (
-              <>
+              <div className="flex flex-col gap-4 w-full">
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="syncFromDate" className="text-sm font-medium">
+                    Synchronizuj wiadomości od daty: <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    id="syncFromDate"
+                    type="date"
+                    value={syncFromDate}
+                    onChange={(e) => setSyncFromDate(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    required
+                  />
+                  {!syncFromDate && (
+                    <p className="text-sm text-muted-foreground">
+                      Wybierz datę początkową, aby zapobiec pobieraniu przestarzałych CV
+                    </p>
+                  )}
+                  {syncFromDate && syncStatus?.syncFromDate && (
+                    <p className="text-sm text-muted-foreground">
+                      Aktualna data w bazie: {new Date(syncStatus.syncFromDate).toLocaleDateString('pl-PL')}
+                    </p>
+                  )}
+                </div>
                 <Button
                   onClick={handleSyncCVs}
-                  disabled={isSyncing}
-                  className="gap-2"
+                  disabled={isSyncing || !syncFromDate}
+                  className="gap-2 w-fit"
                 >
                   {isSyncing ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -210,7 +313,7 @@ export default function CVDashboard() {
                   )}
                   Synchronizuj CV
                 </Button>
-              </>
+              </div>
             )}
           </div>
 
@@ -253,19 +356,42 @@ export default function CVDashboard() {
                 {cvs.length === 0
                   ? 'Brak CV. Rozpocznij synchronizację z Gmail.'
                   : `Znaleziono ${cvs.length} CV`}
+                {orphanedCount > 0 && (
+                  <span className="text-warning ml-2">
+                    ({orphanedCount} rekordów bez plików)
+                  </span>
+                )}
               </CardDescription>
             </div>
-            {cvs.length > 0 && (
-              <Button
-                onClick={() => setShowDeleteDialog(true)}
-                variant="destructive"
-                size="sm"
-                className="gap-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Usuń wszystkie
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {orphanedCount > 0 && (
+                <Button
+                  onClick={handleCleanOrphanedCVs}
+                  variant="outline"
+                  size="sm"
+                  disabled={isCleaningOrphaned}
+                  className="gap-2"
+                >
+                  {isCleaningOrphaned ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Wyczyść rekordy ({orphanedCount})
+                </Button>
+              )}
+              {cvs.length > 0 && (
+                <Button
+                  onClick={() => setShowDeleteDialog(true)}
+                  variant="destructive"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Usuń wszystkie
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>

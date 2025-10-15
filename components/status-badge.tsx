@@ -43,12 +43,14 @@ export function StatusBadge({
       color: 'status-processed',
       icon: CheckCircle2,
       dotColor: 'bg-success',
+      animated: false,
     },
     pending: {
       label: 'Pending',
       color: 'status-pending',
       icon: Clock,
       dotColor: 'bg-warning',
+      animated: false,
     },
     processing: {
       label: 'Processing',
@@ -62,12 +64,14 @@ export function StatusBadge({
       color: 'status-rejected',
       icon: XCircle,
       dotColor: 'bg-error',
+      animated: false,
     },
     error: {
       label: 'Error',
       color: 'status-rejected',
       icon: AlertCircle,
       dotColor: 'bg-error',
+      animated: false,
     },
 
     // Position Statuses
@@ -76,18 +80,21 @@ export function StatusBadge({
       color: 'bg-success-light text-success-dark border-success',
       icon: CheckCircle2,
       dotColor: 'bg-success',
+      animated: false,
     },
     closed: {
       label: 'Closed',
       color: 'bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300',
       icon: XCircle,
       dotColor: 'bg-gray-500',
+      animated: false,
     },
     draft: {
       label: 'Draft',
       color: 'bg-warning-light text-warning-dark border-warning',
       icon: Clock,
       dotColor: 'bg-warning',
+      animated: false,
     },
   };
 
@@ -96,6 +103,7 @@ export function StatusBadge({
     color: 'bg-gray-100 text-gray-700 border-gray-300',
     icon: Circle,
     dotColor: 'bg-gray-500',
+    animated: false,
   };
 
   const Icon = config.icon;

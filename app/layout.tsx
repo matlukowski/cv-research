@@ -4,6 +4,7 @@ import { Manrope } from 'next/font/google';
 import { getUser, getTeamForUser } from '@/lib/db/queries';
 import { SWRConfig } from 'swr';
 import { ClerkProvider } from '@clerk/nextjs';
+import { ThemeProvider } from '@/lib/theme-provider';
 
 export const metadata: Metadata = {
   title: 'AI CV Match - AI-Powered Applicant Tracking System',
@@ -26,11 +27,28 @@ export default function RootLayout({
       <html
         lang="en"
         className={manrope.className}
+        suppressHydrationWarning
       >
+        <head>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                try {
+                  const theme = localStorage.getItem('theme') || 'system';
+                  const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                  const resolvedTheme = theme === 'system' ? systemTheme : theme;
+                  document.documentElement.classList.add(resolvedTheme);
+                } catch (e) {}
+              `,
+            }}
+          />
+        </head>
         <body className="min-h-[100dvh] bg-background text-foreground">
-          <SWRConfig value={{}}>
-            {children}
-          </SWRConfig>
+          <ThemeProvider defaultTheme="system" storageKey="theme">
+            <SWRConfig value={{}}>
+              {children}
+            </SWRConfig>
+          </ThemeProvider>
         </body>
       </html>
     </ClerkProvider>

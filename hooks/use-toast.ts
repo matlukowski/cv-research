@@ -18,6 +18,7 @@ type ToasterToast = Toast & {
   title?: string;
   description?: string;
   action?: ToastActionElement;
+  variant?: 'default' | 'destructive';
 };
 
 const actionTypes = {
@@ -140,9 +141,7 @@ function dispatch(action: Action) {
   });
 }
 
-interface Toast extends Omit<ToasterToast, 'id'> {}
-
-function toast({ ...props }: Toast) {
+function toast({ ...props }: Omit<ToasterToast, 'id'>) {
   const id = genId();
 
   const update = (props: ToasterToast) =>

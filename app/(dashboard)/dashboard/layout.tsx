@@ -41,7 +41,7 @@ export default function DashboardLayout({
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside
-          className={`w-64 bg-white lg:bg-gradient-to-b lg:from-primary-50/30 lg:to-white dark:lg:from-primary-950/10 dark:lg:to-gray-950 border-r border-primary-100 dark:border-primary-900/20 lg:block ${
+          className={`w-64 bg-white dark:bg-card lg:bg-gradient-to-b lg:from-primary-50/30 lg:to-white dark:lg:from-card dark:lg:to-background border-r border-primary-100 dark:border-primary-900/20 lg:block ${
             isSidebarOpen ? 'block' : 'hidden'
           } lg:relative absolute inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'

@@ -20,7 +20,7 @@ export async function sendWelcomeEmail({
       from: FROM_EMAIL,
       to: [to],
       subject: 'Welcome to Our SaaS Platform! 🎉',
-      react: WelcomeEmailTemplate({ userName, actionUrl: dashboardUrl }),
+      react: <WelcomeEmailTemplate userName={userName} actionUrl={dashboardUrl} />,
     });
 
     if (error) {
@@ -51,12 +51,12 @@ export async function sendTeamInvitationEmail({
       from: FROM_EMAIL,
       to: [to],
       subject: `You've been invited to join ${teamName}`,
-      react: TeamInvitationEmailTemplate({
-        inviterName,
-        teamName,
-        invitationUrl,
-        recipientEmail: to,
-      }),
+      react: <TeamInvitationEmailTemplate
+        inviterName={inviterName}
+        teamName={teamName}
+        invitationUrl={invitationUrl}
+        recipientEmail={to}
+      />,
     });
 
     if (error) {
@@ -85,7 +85,7 @@ export async function sendPasswordResetEmail({
       from: FROM_EMAIL,
       to: [to],
       subject: 'Reset Your Password',
-      react: PasswordResetEmailTemplate({ userName, resetUrl }),
+      react: <PasswordResetEmailTemplate userName={userName} resetUrl={resetUrl} />,
     });
 
     if (error) {
@@ -116,11 +116,11 @@ export async function sendSubscriptionConfirmationEmail({
       from: FROM_EMAIL,
       to: [to],
       subject: 'Subscription Confirmed! 🎉',
-      react: SubscriptionConfirmationEmailTemplate({
-        userName,
-        planName,
-        dashboardUrl,
-      }),
+      react: <SubscriptionConfirmationEmailTemplate
+        userName={userName}
+        planName={planName}
+        dashboardUrl={dashboardUrl}
+      />,
     });
 
     if (error) {

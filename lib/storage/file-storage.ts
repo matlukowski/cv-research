@@ -104,8 +104,14 @@ async function deleteFileLocally(fileUrl: string): Promise<void> {
 
   try {
     await fs.unlink(filePath);
-  } catch (error) {
-    console.error(`Error deleting file ${filePath}:`, error);
+  } catch (error: any) {
+    // If file doesn't exist, that's okay - it's already "deleted"
+    if (error.code === 'ENOENT') {
+      console.warn(`[deleteFileLocally] File already deleted or doesn't exist: ${filePath}`);
+      return;
+    }
+    // For other errors, log but don't throw - we don't want to block DB cleanup
+    console.error(`[deleteFileLocally] Error deleting file ${filePath}:`, error);
   }
 }
 

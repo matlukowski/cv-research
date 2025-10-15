@@ -312,6 +312,7 @@ export const gmailConnections = pgTable('gmail_connections', {
   accessToken: text('access_token'),
   tokenExpiry: timestamp('token_expiry'),
   lastSyncAt: timestamp('last_sync_at'),
+  syncFromDate: timestamp('sync_from_date'), // Filter Gmail sync from this date (nullable - must be set before first sync)
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -389,11 +390,26 @@ export const jobPositions = pgTable('job_positions', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const applications = pgTable('applications', {
+  id: serial('id').primaryKey(),
+  cvId: integer('cv_id').notNull().references(() => cvs.id),
+  jobPositionId: integer('job_position_id').references(() => jobPositions.id), // NULL = spontaneous application
+  applicationType: varchar('application_type', { length: 20 }).notNull().default('direct'), // 'direct' or 'spontaneous'
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending, reviewing, interview, rejected, accepted
+  appliedAt: timestamp('applied_at').notNull().defaultNow(),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewNotes: text('review_notes'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const candidateMatches = pgTable('candidate_matches', {
   id: serial('id').primaryKey(),
   jobPositionId: integer('job_position_id').notNull().references(() => jobPositions.id),
   candidateId: integer('candidate_id').notNull().references(() => candidates.id),
   cvId: integer('cv_id').notNull().references(() => cvs.id),
+  applicationId: integer('application_id').references(() => applications.id), // NULL if this is a cross-match
+  matchType: varchar('match_type', { length: 20 }).notNull().default('cross'), // 'direct' = applied for this position, 'cross' = suggested match
   matchScore: integer('match_score').notNull(), // 0-100
   aiAnalysis: text('ai_analysis'), // detailed AI reasoning (3-4 sentences)
   summary: text('summary'), // short summary from AI (1-2 sentences)
@@ -434,6 +450,18 @@ export const cvsRelations = relations(cvs, ({ one, many }) => ({
     references: [candidates.id],
   }),
   matches: many(candidateMatches),
+  applications: many(applications),
+}));
+
+export const applicationsRelations = relations(applications, ({ one }) => ({
+  cv: one(cvs, {
+    fields: [applications.cvId],
+    references: [cvs.id],
+  }),
+  jobPosition: one(jobPositions, {
+    fields: [applications.jobPositionId],
+    references: [jobPositions.id],
+  }),
 }));
 
 export const jobPositionsRelations = relations(jobPositions, ({ one, many }) => ({
@@ -446,6 +474,7 @@ export const jobPositionsRelations = relations(jobPositions, ({ one, many }) => 
     references: [users.id],
   }),
   matches: many(candidateMatches),
+  applications: many(applications),
 }));
 
 export const candidateMatchesRelations = relations(candidateMatches, ({ one }) => ({
@@ -461,6 +490,10 @@ export const candidateMatchesRelations = relations(candidateMatches, ({ one }) =
     fields: [candidateMatches.cvId],
     references: [cvs.id],
   }),
+  application: one(applications, {
+    fields: [candidateMatches.applicationId],
+    references: [applications.id],
+  }),
 }));
 
 // TypeScript Types
@@ -472,5 +505,7 @@ export type CV = typeof cvs.$inferSelect;
 export type NewCV = typeof cvs.$inferInsert;
 export type JobPosition = typeof jobPositions.$inferSelect;
 export type NewJobPosition = typeof jobPositions.$inferInsert;
+export type Application = typeof applications.$inferSelect;
+export type NewApplication = typeof applications.$inferInsert;
 export type CandidateMatch = typeof candidateMatches.$inferSelect;
 export type NewCandidateMatch = typeof candidateMatches.$inferInsert;

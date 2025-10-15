@@ -118,10 +118,14 @@ cv research/
 ├── lib/                         # Core business logic
 │   ├── ai/                      # AI processing modules
 │   │   ├── cv-processor.ts      # CV validation & extraction
-│   │   └── candidate-matcher.ts # AI-powered candidate matching
+│   │   ├── candidate-matcher.ts # AI-powered candidate matching (Direct vs Cross)
+│   │   └── job-detector.ts      # AI job position detection from emails
+│   ├── applications/            # Application management
+│   │   └── application-manager.ts # Create, update, query applications
 │   ├── gmail/                   # Gmail integration
 │   │   ├── auth.ts              # OAuth 2.0 flow
-│   │   └── sync.ts              # Email synchronization
+│   │   ├── sync.ts              # Email synchronization + auto-application creation
+│   │   └── cv-filters.ts        # Intelligent CV filtering
 │   ├── storage/                 # File storage
 │   │   └── file-storage.ts      # Local file handling
 │   ├── db/                      # Database layer
@@ -131,9 +135,6 @@ cv research/
 │   │   ├── migrations/          # SQL migrations
 │   │   ├── seed.ts              # Seed data
 │   │   └── setup.ts             # Database setup script
-│   ├── auth/                    # Authentication utilities
-│   │   ├── session.ts           # Session management
-│   │   └── middleware.ts        # Auth middleware
 │   ├── payments/                # Payment processing
 │   │   ├── stripe.ts            # Stripe client
 │   │   └── actions.ts           # Payment actions
@@ -395,17 +396,94 @@ cv research/
 
 ---
 
+#### Application Management System
+**Purpose**: Track which candidates applied for which positions and distinguish them from AI-suggested matches
+
+**Problem Solved**:
+- Prevents matching candidates who didn't apply for a specific position
+- Provides context for recruiter feedback (applied vs suggested)
+- Maintains GDPR compliance by tracking application intent
+- Enables proper candidate journey tracking
+
+**Features**:
+
+1. **Automatic Application Detection** (AI-powered)
+   - Analyzes email subject and body during Gmail sync
+   - Detects if candidate is applying for a specific position
+   - Matches against active job positions in the system
+   - Creates application record automatically
+   - Falls back to "spontaneous application" if no position detected
+
+2. **Application Types**:
+   - **Direct** - Candidate applied for a specific position
+   - **Spontaneous** - Candidate sent CV without specific position
+
+3. **Application Statuses**:
+   - `pending` - Application received, awaiting review
+   - `reviewing` - Under active review by recruiter
+   - `interview` - Candidate invited for interview
+   - `rejected` - Application rejected
+   - `accepted` - Candidate accepted/hired
+
+4. **Application Management**:
+   - View all applications for a specific position
+   - View all spontaneous applications
+   - Update application status with notes
+   - Track review timeline (appliedAt, reviewedAt)
+
+**Key Files**:
+- `lib/ai/job-detector.ts` - AI job position detection from email content
+- `lib/applications/application-manager.ts` - Application CRUD operations
+- `lib/gmail/sync.ts` - Enhanced with auto-application creation
+- `app/api/applications/route.ts` - Application API endpoints
+- `app/api/applications/[id]/route.ts` - Single application operations
+- `app/api/positions/[id]/applications/route.ts` - Position applications
+
+**Database Tables**:
+- `applications` - Application records linking CVs to positions
+
+**Workflow**:
+```
+1. CV arrives via Gmail sync
+2. AI analyzes email subject/body
+3. Detects target job position (or none)
+4. Creates application record:
+   - Direct: cvId + jobPositionId
+   - Spontaneous: cvId only (jobPositionId = null)
+5. Application available for recruiter review
+```
+
+---
+
 #### AI-Powered Candidate Matching
-**Purpose**: Intelligently match candidates to job positions
+**Purpose**: Intelligently match candidates to job positions with Direct vs Cross distinction
 
-**Matching Algorithm**:
+**Matching Algorithm** (Enhanced with Direct vs Cross Matching):
 
-1. **Input**:
+1. **Two-Phase Matching Process**:
+
+   **Phase 1: Direct Applications**
+   - Matches candidates who **applied for this specific position**
+   - Queries `applications` table for this job position
+   - Only processes candidates with direct applications
+   - Marked as `matchType: 'direct'`
+   - Linked to application record via `applicationId`
+   - **Priority**: Displayed first in results
+
+   **Phase 2: Cross Matches** (Optional)
+   - Matches candidates who **did NOT apply** but might fit
+   - Finds all team candidates except direct applicants
+   - AI-powered suggestion system
+   - Marked as `matchType: 'cross'`
+   - No application record (applicationId: null)
+   - **Purpose**: Discover talent in existing database
+
+2. **Input** (per candidate):
    - Job position details (title, description, requirements, responsibilities)
    - Candidate profile (all extracted data)
    - Full CV text (up to 6000 chars)
 
-2. **AI Analysis**:
+3. **AI Analysis**:
    - Model: Grok 4 Fast (xAI, temperature: 0.3)
    - Task: Evaluate candidate-job fit
    - Scoring scale:
@@ -415,10 +493,12 @@ cv research/
      - 71-85: Very good fit, meets all requirements
      - 86-100: Ideal candidate, exceeds requirements
 
-3. **Output**:
+4. **Output**:
    ```json
    {
      "matchScore": 0-100,
+     "matchType": "direct" | "cross",
+     "applicationId": number | null,
      "aiAnalysis": "detailed 3-4 sentence analysis",
      "strengths": ["strength 1", "strength 2", "strength 3"],
      "weaknesses": ["weakness 1", "weakness 2"],
@@ -426,10 +506,23 @@ cv research/
    }
    ```
 
-4. **Storage**:
+5. **Sorting & Display**:
+   - **Primary Sort**: Match type (direct first, cross second)
+   - **Secondary Sort**: Match score (highest first)
+   - Result: Direct applicants always appear before suggestions
+   - Clear visual distinction in UI
+
+6. **Storage**:
    - Results saved to `candidate_matches` table
+   - Includes matchType and applicationId
    - Can be re-run to update scores
    - Historical tracking of matches
+
+7. **Filtering Options**:
+   - `matchType: 'all' | 'direct' | 'cross'` - Control which matches to return
+   - `includeCrossMatches: boolean` - Enable/disable cross-match suggestions
+   - `minScore: number` - Minimum match score threshold
+   - `maxResults: number` - Limit number of results
 
 **Key Files**:
 - `lib/ai/candidate-matcher.ts` - Matching logic
@@ -573,14 +666,30 @@ cv research/
 - createdAt, updatedAt: timestamp
 ```
 
+#### `applications`
+```sql
+- id: serial (PK)
+- cvId: FK(cvs.id)
+- jobPositionId: FK(job_positions.id) [nullable for spontaneous applications]
+- applicationType: varchar(20) DEFAULT 'direct' ('direct' or 'spontaneous')
+- status: varchar(20) DEFAULT 'pending' (pending, reviewing, interview, rejected, accepted)
+- appliedAt: timestamp DEFAULT now()
+- reviewedAt: timestamp
+- reviewNotes: text
+- createdAt, updatedAt: timestamp
+```
+
 #### `candidate_matches`
 ```sql
 - id: serial (PK)
 - jobPositionId: FK(job_positions.id)
 - candidateId: FK(candidates.id)
 - cvId: FK(cvs.id)
+- applicationId: FK(applications.id) [nullable for cross-matches]
+- matchType: varchar(20) DEFAULT 'cross' ('direct' or 'cross')
 - matchScore: integer (0-100)
 - aiAnalysis: text (detailed reasoning)
+- summary: text (short 1-2 sentence summary)
 - strengths: jsonb (string[])
 - weaknesses: jsonb (string[])
 - createdAt, updatedAt: timestamp
@@ -625,12 +734,12 @@ cv research/
 8. User redirected back to dashboard
 ```
 
-### 3. CV Synchronization (with Intelligent Filtering)
+### 3. CV Synchronization (with Intelligent Filtering + Auto-Application Detection)
 ```
 1. Manual trigger: User clicks "Sync Now"
    OR Automated: Scheduled job (cron)
 2. API call to /api/gmail/sync
-   - Optional params: useSmartFiltering (default: true), filterThreshold (default: 30)
+   - Optional params: useSmartFiltering (default: true), filterThreshold (default: 10)
 3. Fetch authenticated Gmail client
 4. LAYER 1 - Smart Gmail Query:
    - Build intelligent query with CV keywords (multi-language)
@@ -653,6 +762,15 @@ cv research/
    f. Download attachment ONLY if passed filtering (base64)
    g. Decode and save file to storage
    h. Create CV record (status: pending)
+   i. **NEW: AI Job Position Detection**:
+      - Analyze email subject and body
+      - Match against active job positions for team
+      - Determine if candidate is applying for specific position
+      - Create application record:
+        * Direct application: links to specific job position
+        * Spontaneous application: no job position (jobPositionId = null)
+      - Log detection result (position, confidence, reason)
+      - Fallback to spontaneous if detection fails
 6. Update lastSyncAt timestamp
 7. Return sync results:
    - totalMessages: Messages found
@@ -743,35 +861,67 @@ cv research/
 10. No page navigation required - all in modal
 ```
 
-### 6. Candidate Matching
+### 6. Candidate Matching (Direct vs Cross)
 ```
 1. User views job position
 2. Clicks "Find Candidates" or "Run Matching"
 3. API call to /api/positions/[id]/match
+   - Options: matchType ('all'|'direct'|'cross'), includeCrossMatches (boolean)
 4. Load job position details
-5. Load all processed candidates for team
-6. For each candidate:
-   a. Load latest processed CV
-   b. Prepare matching prompt:
-      - Job details
-      - Candidate profile
-      - Full CV text (up to 6000 chars)
-   c. Send to Grok 4 Fast (xAI, temperature: 0.3)
-   d. Parse AI response:
-      - Match score (0-100)
-      - Detailed analysis
-      - Strengths & weaknesses
-      - Summary
-   e. Save to candidate_matches table
-   f. Apply minimum score filter
-7. Sort results by match score (descending)
-8. Return top matches
-9. Display results in UI with:
-   - Score badge
-   - Candidate details
-   - Strengths/weaknesses
-   - AI analysis
-   - Contact actions
+5. Auto-process any pending CVs first
+
+6. PHASE 1: Match Direct Applications
+   a. Query applications table for this position
+   b. Get all candidates who applied for this position
+   c. For each direct applicant:
+      - Load processed CV
+      - Prepare AI matching prompt
+      - Send to Grok 4 Fast (xAI, temperature: 0.3)
+      - Parse response (score, analysis, strengths, weaknesses)
+      - Mark as matchType: 'direct'
+      - Link to applicationId
+      - Save to candidate_matches table
+   d. Filter by minimum score
+   e. Collect direct match results
+
+7. PHASE 2: Match Cross Candidates (if enabled)
+   a. Get all processed candidates for team
+   b. Filter OUT candidates who already applied (from Phase 1)
+   c. For each cross candidate:
+      - Load processed CV
+      - Prepare AI matching prompt
+      - Send to Grok 4 Fast (xAI, temperature: 0.3)
+      - Parse response (score, analysis, strengths, weaknesses)
+      - Mark as matchType: 'cross'
+      - No applicationId (null)
+      - Save to candidate_matches table
+   d. Filter by minimum score
+   e. Collect cross match results
+
+8. Combine and sort results:
+   - Primary sort: matchType (direct first, cross second)
+   - Secondary sort: matchScore (descending)
+
+9. Return combined results
+
+10. Display in UI with sections:
+    ┌─────────────────────────────────┐
+    │ DIRECT APPLICATIONS (3)         │
+    │ ✓ Jan Kowalski (85%) - APPLIED │
+    │ ✓ Anna Nowak (72%) - APPLIED   │
+    ├─────────────────────────────────┤
+    │ SUGGESTED CANDIDATES (2)        │
+    │ ⚡ Piotr Kowalski (78%)         │
+    │ ⚡ Maria Nowak (65%)             │
+    └─────────────────────────────────┘
+
+    Each showing:
+    - Match type badge (APPLIED vs SUGGESTED)
+    - Score badge and quality indicator
+    - Candidate details
+    - Strengths/weaknesses
+    - AI analysis
+    - Contact information
 ```
 
 ### 7. Payment Flow
@@ -818,9 +968,18 @@ cv research/
 - `GET /api/positions/[id]` - Get position details
 - `PUT /api/positions/[id]` - Update position
 - `DELETE /api/positions/[id]` - Delete position
-- `POST /api/positions/[id]/match` - Run candidate matching
-  - Body: `{ minScore?, maxResults? }`
-  - Returns: `MatchResult[]`
+- `POST /api/positions/[id]/match` - Run candidate matching (Direct + Cross)
+  - Body: `{ minScore?, maxResults?, matchType?, includeCrossMatches? }`
+  - Returns: `MatchResult[]` (sorted by matchType then score)
+- `GET /api/positions/[id]/match` - Get existing match results
+- `GET /api/positions/[id]/applications` - Get all applications for this position
+
+### Applications
+- `GET /api/applications` - Get all spontaneous applications for team
+- `GET /api/applications/[id]` - Get application details
+- `PATCH /api/applications/[id]` - Update application status
+  - Body: `{ status, reviewNotes? }`
+  - Valid statuses: pending, reviewing, interview, rejected, accepted
 
 ### Team Management
 - `GET /api/team` - Get current team details
@@ -1162,10 +1321,136 @@ MIT License - See LICENSE file for details
 ## Project Status
 
 **Version**: 1.0.0 (Development)
-**Last Updated**: 2025-10-14
+**Last Updated**: 2025-10-15
 **Maintainer**: Development Team
 
 **Recent Changes**:
+- **Orphaned CV Detection and Cleanup** (2025-10-15):
+  - **Problem**: CV records remained in database after files were deleted
+    - CVs displayed on frontend even though files didn't exist on disk
+    - No way to identify or clean up orphaned records
+  - **Solution**: Automatic detection and cleanup system
+    - **Modified GET /api/cvs**:
+      - Checks file existence for each CV using `fileExists()`
+      - Filters out CVs without files before sending to frontend
+      - Returns `orphanedCount` in response
+      - Logs orphaned CV details for debugging
+    - **New endpoint: DELETE /api/cvs/orphaned**:
+      - Cleans up CV records without corresponding files
+      - Performs cascade deletion (candidate_matches → applications → CVs)
+      - Returns count of deleted records
+      - Comprehensive logging
+    - **Frontend enhancements** (cv-dashboard.tsx):
+      - Displays orphaned count in card description
+      - Shows "Wyczyść rekordy (N)" button when orphaned CVs exist
+      - Loading state during cleanup operation
+      - Toast notifications for success/error
+  - **Benefits**:
+    - Users only see CVs that actually exist
+    - Easy one-click cleanup of orphaned records
+    - No manual database intervention needed
+    - Maintains database integrity automatically
+    - Clear visibility of orphaned record count
+- **Fixed CV Deletion with Cascade** (2025-10-15):
+  - **Problem**: CV deletion failed with foreign key constraint violation
+    - Error: `update or delete on table "cvs" violates foreign key constraint "candidate_matches_cv_id_cvs_id_fk"`
+    - CVs referenced by `candidate_matches` and `applications` tables couldn't be deleted
+    - Additional issue: ENOENT errors for missing files blocked deletion
+  - **Solution**: Implemented proper cascade deletion
+    - Added cascade deletion for `candidate_matches` records before CV deletion
+    - Added cascade deletion for `applications` records before CV deletion
+    - Updated `deleteFileLocally` to gracefully handle missing files (ENOENT)
+    - Proper deletion order: matches → applications → files → CVs
+  - **Updated Files**:
+    - `app/api/cvs/route.ts`:
+      - Import `candidateMatches` and `applications` tables
+      - Import `inArray` operator from Drizzle ORM
+      - Delete related records before CV deletion
+      - Enhanced logging with detailed step-by-step output
+      - Added `relatedRecords` to response (shows counts of deleted matches/applications)
+    - `lib/storage/file-storage.ts`:
+      - Updated `deleteFileLocally` to catch ENOENT errors
+      - Log warning instead of throwing error when file doesn't exist
+      - Don't block database cleanup if file is already deleted
+  - **Enhanced Error Handling**:
+    - Frontend now checks `response.ok` before parsing JSON
+    - Displays detailed error messages from server (`error.details`)
+    - Better user feedback for deletion failures
+  - **Benefits**:
+    - CV deletion now works correctly even with related records
+    - Proper cleanup of all associated data
+    - No orphaned records left in database
+    - Better error messages for debugging
+    - Graceful handling of missing files
+    - Comprehensive logging for troubleshooting
+- **Code Cleanup & Optimization** (2025-10-14):
+  - **Removed Unused Dependencies**:
+    - `bcryptjs` - Not needed (Clerk handles authentication)
+    - `pdf-parse` - Not used (pdfreader is used instead)
+    - `pdfjs-dist` - Not used
+    - `react-pdf` - Not used (server-side PDF parsing)
+    - `radix-ui` - Not used (using @radix-ui/* packages)
+    - `@types/pdf-parse` - Dependency removed
+  - **Removed Unused Files**:
+    - `lib/auth/session.ts` - Custom session management not needed with Clerk
+    - `lib/auth/middleware.ts` - Clerk provides middleware
+    - `scripts/migrate-candidates.ts` - One-time migration completed
+    - `scripts/reset-cv-status.ts` - Utility script not in core flow
+    - `scripts/run-migration-0004.ts` - One-time migration completed
+  - **Removed Unused Functions**:
+    - `lib/ai/job-detector.ts`: Removed `detectJobPositionFromCV()` - unused alternative method
+  - **Cleaned up package.json Scripts**:
+    - Removed `db:migrate-candidates` - migration completed
+    - Removed `db:reset-cv-status` - utility script
+  - **Benefits**:
+    - Reduced npm package count from 35 to 28 dependencies (7 packages removed)
+    - Removed ~50MB of unused node_modules
+    - Cleaner codebase with no dead code
+    - Faster npm install times
+    - Reduced bundle size potential
+    - Improved maintainability
+- **Application Management System & Direct/Cross Matching** (2025-10-14):
+  - **Problem**: System matched all candidates to all positions, regardless of whether they applied
+  - **Solution**: Implemented application tracking with AI-powered position detection
+  - **New Tables**:
+    - `applications` - Tracks which CV applied for which position (or spontaneous)
+    - Extended `candidate_matches` with `matchType` ('direct' | 'cross') and `applicationId`
+  - **New Modules**:
+    - `lib/ai/job-detector.ts` - AI detection of target job position from email content
+    - `lib/applications/application-manager.ts` - Complete application CRUD operations
+  - **Enhanced Gmail Sync**:
+    - Now automatically detects job position during CV sync
+    - Creates application record linking CV to position
+    - Falls back to spontaneous application if no position detected
+    - Uses AI to analyze email subject and body against active positions
+  - **Enhanced Candidate Matching**:
+    - Two-phase matching: Direct Applications → Cross Matches
+    - Direct matches: Candidates who applied for this position (priority)
+    - Cross matches: Candidates who didn't apply but might fit (suggestions)
+    - Results sorted by type (direct first) then score
+    - New filtering options: matchType, includeCrossMatches
+  - **New API Endpoints**:
+    - `GET/PATCH /api/applications/[id]` - Application management
+    - `GET /api/positions/[id]/applications` - Position applications
+    - Enhanced `/api/positions/[id]/match` with filtering options
+  - **Database Migration**: `0005_add_applications_and_match_type.sql`
+  - **Benefits**:
+    - Recruiters know who actually applied vs who is a suggestion
+    - Proper feedback context for candidates
+    - GDPR compliance (tracks application intent)
+    - Prevents inappropriate matching (e.g., suggesting someone who didn't apply)
+    - Enables discovery of talent in database (cross-matching)
+  - **Workflow**:
+    ```
+    CV arrives → AI detects position → Creates application → Matching distinguishes:
+    ┌─────────────────────────────┐
+    │ DIRECT APPLICATIONS         │ ← Applied for this position
+    │ ✓ Jan Kowalski (85%)        │
+    ├─────────────────────────────┤
+    │ SUGGESTED CANDIDATES        │ ← Didn't apply, but might fit
+    │ ⚡ Anna Nowak (78%)          │
+    └─────────────────────────────┘
+    ```
 - **Switched from OpenAI to xAI Grok 4 Fast** (2025-10-14):
   - Replaced OpenAI GPT-5 with xAI Grok 4 Fast (non-reasoning model)
   - API Configuration:

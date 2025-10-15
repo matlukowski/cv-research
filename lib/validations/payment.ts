@@ -18,7 +18,7 @@ export const createCheckoutSchema = z.object({
 export const webhookEventSchema = z.object({
   type: z.string(),
   data: z.object({
-    object: z.record(z.any()),
+    object: z.record(z.string(), z.any()),
   }),
 });
 

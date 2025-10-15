@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/card';
 import { Button } from '@/components/button';
 import { ScoreBadge } from '@/components/score-badge';
@@ -21,6 +21,8 @@ interface MatchResult {
   email?: string;
   phone?: string;
   location?: string;
+  matchType: 'direct' | 'cross';
+  applicationId?: number;
 }
 
 export default function CandidateMatches({ positionId }: { positionId: number }) {
@@ -90,6 +92,13 @@ export default function CandidateMatches({ positionId }: { positionId: number })
     if (score >= 51) return 'medium';
     return 'low';
   };
+
+  // Split matches into direct applications and suggested candidates
+  const { directApplications, suggestedCandidates } = useMemo(() => {
+    const direct = matches.filter((m) => m.matchType === 'direct');
+    const suggested = matches.filter((m) => m.matchType === 'cross');
+    return { directApplications: direct, suggestedCandidates: suggested };
+  }, [matches]);
 
   if (isLoading) {
     return <LoadingSpinner size="lg" text="Ładowanie..." />;

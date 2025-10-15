@@ -16,7 +16,7 @@ export const paginationSchema = z.object({
 // Search
 export const searchSchema = z.object({
   query: z.string().min(1, 'Search query is required').max(100),
-  filters: z.record(z.string()).optional(),
+  filters: z.record(z.string(), z.any()).optional(),
 });
 
 // ID validation

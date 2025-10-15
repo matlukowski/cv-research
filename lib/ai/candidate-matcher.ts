@@ -30,21 +30,31 @@ export interface MatchResult {
   email?: string;
   phone?: string;
   location?: string;
+  matchType: 'direct' | 'cross'; // direct = applied for this position, cross = suggested match
+  applicationId?: number; // ID of application if direct match
 }
 
 export interface MatchingOptions {
   minScore?: number; // Minimum score to include in results
   maxResults?: number; // Maximum number of results
+  matchType?: 'all' | 'direct' | 'cross'; // Type of matches to include (default: 'all')
+  includeCrossMatches?: boolean; // Include suggested cross-matches (default: true)
 }
 
 /**
  * Match candidates to a job position using Grok 4 Fast (xAI)
+ * Now supports Direct Applications vs Cross Matches
  */
 export async function matchCandidatesForPosition(
   jobPositionId: number,
   options: MatchingOptions = {}
 ): Promise<MatchResult[]> {
-  const { minScore = 0, maxResults = 50 } = options;
+  const {
+    minScore = 0,
+    maxResults = 50,
+    matchType = 'all',
+    includeCrossMatches = true,
+  } = options;
 
   try {
     // Get job position
@@ -65,39 +75,153 @@ export async function matchCandidatesForPosition(
       `[Matching] Processed ${processingResult.processed} CVs, ${processingResult.errors} errors`
     );
 
-    // STEP 2: Get all processed candidates for this team
-    const teamCandidates = await db
-      .select()
-      .from(candidates)
-      .where(eq(candidates.teamId, position.teamId));
+    let results: MatchResult[] = [];
+
+    // STEP 2: Match direct applications (candidates who applied for this position)
+    if (matchType === 'all' || matchType === 'direct') {
+      const directResults = await matchDirectApplications(jobPositionId, position, minScore);
+      results = results.concat(directResults);
+      console.log(`[Matching] Found ${directResults.length} direct applications`);
+    }
+
+    // STEP 3: Match cross candidates (candidates who didn't apply but might fit)
+    if ((matchType === 'all' || matchType === 'cross') && includeCrossMatches) {
+      const crossResults = await matchCrossCandidates(jobPositionId, position, minScore);
+      results = results.concat(crossResults);
+      console.log(`[Matching] Found ${crossResults.length} cross-match candidates`);
+    }
+
+    // Sort by match type (direct first) and then by score (highest first)
+    results.sort((a, b) => {
+      if (a.matchType === 'direct' && b.matchType === 'cross') return -1;
+      if (a.matchType === 'cross' && b.matchType === 'direct') return 1;
+      return b.matchScore - a.matchScore;
+    });
+
+    // Limit results
+    return results.slice(0, maxResults);
+  } catch (error) {
+    console.error('Error in matchCandidatesForPosition:', error);
+    throw error;
+  }
+}
+
+/**
+ * Match candidates who applied directly for this position
+ */
+async function matchDirectApplications(
+  jobPositionId: number,
+  position: any,
+  minScore: number
+): Promise<MatchResult[]> {
+  try {
+    const { applications } = await import('../db/schema');
+
+    // Get all applications for this position
+    const directApplications = await db
+      .select({
+        application: applications,
+        cv: cvs,
+        candidate: candidates,
+      })
+      .from(applications)
+      .innerJoin(cvs, eq(applications.cvId, cvs.id))
+      .innerJoin(candidates, eq(cvs.candidateId, candidates.id))
+      .where(
+        and(
+          eq(applications.jobPositionId, jobPositionId),
+          eq(cvs.status, 'processed')
+        )
+      );
 
     const results: MatchResult[] = [];
 
-    // Match each candidate
-    for (const candidate of teamCandidates) {
+    for (const { application, cv, candidate } of directApplications) {
       try {
-        // Get candidate's CV
-        const [cv] = await db
-          .select()
-          .from(cvs)
-          .where(
-            and(
-              eq(cvs.candidateId, candidate.id),
-              eq(cvs.status, 'processed')
-            )
-          )
-          .limit(1);
-
-        if (!cv || !cv.parsedText) {
-          continue; // Skip if no CV or no parsed text
-        }
+        if (!cv.parsedText) continue;
 
         // Perform AI matching
-        const matchResult = await matchCandidateToPosition(
-          candidate,
-          cv,
-          position
-        );
+        const matchResult = await matchCandidateToPosition(candidate, cv, position);
+
+        // Mark as direct match and add application ID
+        matchResult.matchType = 'direct';
+        matchResult.applicationId = application.id;
+
+        if (matchResult.matchScore >= minScore) {
+          results.push(matchResult);
+
+          // Save match result to database
+          await saveMatchResult(
+            jobPositionId,
+            candidate.id,
+            cv.id,
+            matchResult,
+            application.id
+          );
+        }
+      } catch (error) {
+        console.error(`Error matching direct application ${application.id}:`, error);
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error('Error in matchDirectApplications:', error);
+    return [];
+  }
+}
+
+/**
+ * Match candidates who didn't apply but might be a good fit (cross-match)
+ */
+async function matchCrossCandidates(
+  jobPositionId: number,
+  position: any,
+  minScore: number
+): Promise<MatchResult[]> {
+  try {
+    const { applications } = await import('../db/schema');
+
+    // Get all processed candidates for this team who DIDN'T apply for this position
+    const teamCandidates = await db
+      .select({
+        candidate: candidates,
+        cv: cvs,
+      })
+      .from(candidates)
+      .innerJoin(cvs, eq(candidates.id, cvs.candidateId))
+      .where(
+        and(
+          eq(candidates.teamId, position.teamId),
+          eq(cvs.status, 'processed')
+        )
+      );
+
+    // Filter out candidates who already applied for this position
+    const appliedCVIds = new Set(
+      (
+        await db
+          .select({ cvId: applications.cvId })
+          .from(applications)
+          .where(eq(applications.jobPositionId, jobPositionId))
+      ).map((a) => a.cvId)
+    );
+
+    const crossCandidates = teamCandidates.filter(
+      ({ cv }) => !appliedCVIds.has(cv.id)
+    );
+
+    const results: MatchResult[] = [];
+
+    for (const { candidate, cv } of crossCandidates) {
+      try {
+        if (!cv.parsedText) continue;
+
+        // Perform AI matching
+        const matchResult = await matchCandidateToPosition(candidate, cv, position);
+
+        // Mark as cross match
+        matchResult.matchType = 'cross';
 
         if (matchResult.matchScore >= minScore) {
           results.push(matchResult);
@@ -106,18 +230,14 @@ export async function matchCandidatesForPosition(
           await saveMatchResult(jobPositionId, candidate.id, cv.id, matchResult);
         }
       } catch (error) {
-        console.error(`Error matching candidate ${candidate.id}:`, error);
+        console.error(`Error matching cross candidate ${candidate.id}:`, error);
       }
     }
 
-    // Sort by match score (highest first)
-    results.sort((a, b) => b.matchScore - a.matchScore);
-
-    // Limit results
-    return results.slice(0, maxResults);
+    return results;
   } catch (error) {
-    console.error('Error in matchCandidatesForPosition:', error);
-    throw error;
+    console.error('Error in matchCrossCandidates:', error);
+    return [];
   }
 }
 
@@ -195,6 +315,7 @@ Zwróć odpowiedź w formacie JSON:
       email: candidate.email,
       phone: candidate.phone,
       location: candidate.location,
+      matchType: 'cross', // default to cross, will be overridden by caller if direct
     };
   } catch (error) {
     console.error('Error in AI matching:', error);
@@ -209,7 +330,8 @@ async function saveMatchResult(
   jobPositionId: number,
   candidateId: number,
   cvId: number,
-  matchResult: MatchResult
+  matchResult: MatchResult,
+  applicationId?: number
 ): Promise<void> {
   try {
     // Check if match already exists
@@ -225,18 +347,22 @@ async function saveMatchResult(
       )
       .limit(1);
 
+    const matchData = {
+      matchScore: matchResult.matchScore,
+      aiAnalysis: matchResult.aiAnalysis,
+      summary: matchResult.summary,
+      strengths: matchResult.strengths,
+      weaknesses: matchResult.weaknesses,
+      matchType: matchResult.matchType,
+      applicationId: applicationId || null,
+      updatedAt: new Date(),
+    };
+
     if (existing.length > 0) {
       // Update existing match
       await db
         .update(candidateMatches)
-        .set({
-          matchScore: matchResult.matchScore,
-          aiAnalysis: matchResult.aiAnalysis,
-          summary: matchResult.summary,
-          strengths: matchResult.strengths,
-          weaknesses: matchResult.weaknesses,
-          updatedAt: new Date(),
-        })
+        .set(matchData)
         .where(eq(candidateMatches.id, existing[0].id));
     } else {
       // Insert new match
@@ -244,11 +370,7 @@ async function saveMatchResult(
         jobPositionId,
         candidateId,
         cvId,
-        matchScore: matchResult.matchScore,
-        aiAnalysis: matchResult.aiAnalysis,
-        summary: matchResult.summary,
-        strengths: matchResult.strengths,
-        weaknesses: matchResult.weaknesses,
+        ...matchData,
       } as NewCandidateMatch);
     }
   } catch (error) {
@@ -286,10 +408,16 @@ export async function getMatchResultsForPosition(
       email: m.candidate.email || undefined,
       phone: m.candidate.phone || undefined,
       location: m.candidate.location || undefined,
+      matchType: (m.match.matchType as 'direct' | 'cross') || 'cross',
+      applicationId: m.match.applicationId || undefined,
     }));
 
-    // Sort by match score
-    results.sort((a, b) => b.matchScore - a.matchScore);
+    // Sort by match type (direct first) and then by score
+    results.sort((a, b) => {
+      if (a.matchType === 'direct' && b.matchType === 'cross') return -1;
+      if (a.matchType === 'cross' && b.matchType === 'direct') return 1;
+      return b.matchScore - a.matchScore;
+    });
 
     return results;
   } catch (error) {

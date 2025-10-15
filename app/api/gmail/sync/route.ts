@@ -34,7 +34,46 @@ export async function POST(request: NextRequest) {
       query,
       useSmartFiltering = true,
       filterThreshold = 10, // Low threshold: permissive filtering
+      syncFromDate,
     } = body;
+
+    // Validate and parse syncFromDate if provided
+    let parsedSyncFromDate: Date | undefined;
+    if (syncFromDate) {
+      parsedSyncFromDate = new Date(syncFromDate);
+
+      // Validate date is not in the future
+      if (parsedSyncFromDate > new Date()) {
+        return NextResponse.json(
+          { error: 'syncFromDate cannot be in the future' },
+          { status: 400 }
+        );
+      }
+
+      // Validate date is valid
+      if (isNaN(parsedSyncFromDate.getTime())) {
+        return NextResponse.json(
+          { error: 'Invalid syncFromDate format' },
+          { status: 400 }
+        );
+      }
+
+      // Update syncFromDate in gmail_connections table
+      const { gmailConnections } = await import('@/lib/db/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const { db } = await import('@/lib/db/drizzle');
+
+      await db
+        .update(gmailConnections)
+        .set({ syncFromDate: parsedSyncFromDate, updatedAt: new Date() })
+        .where(
+          and(
+            eq(gmailConnections.userId, dbUser.id),
+            eq(gmailConnections.teamId, team.id),
+            eq(gmailConnections.isActive, true)
+          )
+        );
+    }
 
     // Sync emails with intelligent filtering
     const result = await syncGmailCVs(dbUser.id, team.id, {
@@ -42,6 +81,7 @@ export async function POST(request: NextRequest) {
       query,
       useSmartFiltering,
       filterThreshold,
+      syncFromDate: parsedSyncFromDate,
     });
 
     return NextResponse.json({

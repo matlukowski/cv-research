@@ -13,6 +13,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { useRouter } from 'next/navigation';
 import { SignInButton, SignUpButton, useUser, useClerk } from '@clerk/nextjs';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 function UserMenu() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -34,7 +35,7 @@ function UserMenu() {
             Sign Up
           </Button>
         </Link>
-        <SignInButton mode="redirect" afterSignInUrl="/dashboard" asChild>
+        <SignInButton mode="modal" fallbackRedirectUrl="/dashboard">
           <Button variant="ghost" className="rounded-full">Sign in</Button>
         </SignInButton>
       </>
@@ -84,7 +85,8 @@ function Header() {
             AI CV Match
           </span>
         </Link>
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2">
+          <ThemeToggle />
           <Suspense fallback={<div className="h-9" />}>
             <UserMenu />
           </Suspense>
