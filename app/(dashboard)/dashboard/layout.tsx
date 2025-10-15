@@ -24,7 +24,7 @@ export default function DashboardLayout({
   return (
     <div className="flex flex-col min-h-[calc(100dvh-68px)] max-w-7xl mx-auto w-full">
       {/* Mobile header */}
-      <div className="lg:hidden flex items-center justify-between bg-white/95 backdrop-blur-sm border-b border-primary-100 dark:border-primary-900/20 p-4">
+      <div suppressHydrationWarning className="lg:hidden flex items-center justify-between bg-white/95 backdrop-blur-sm border-b border-primary-100 dark:border-primary-900/20 p-4">
         <div className="flex items-center">
           <span className="font-medium">Dashboard</span>
         </div>
@@ -41,6 +41,7 @@ export default function DashboardLayout({
       <div className="flex flex-1 overflow-hidden h-full">
         {/* Sidebar */}
         <aside
+          suppressHydrationWarning
           className={`w-64 bg-white dark:bg-card lg:bg-gradient-to-b lg:from-primary-50/30 lg:to-white dark:lg:from-card dark:lg:to-background border-r border-primary-100 dark:border-primary-900/20 lg:block ${
             isSidebarOpen ? 'block' : 'hidden'
           } lg:relative absolute inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
