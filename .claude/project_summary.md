@@ -142,11 +142,6 @@ cv research/
 │   │   ├── client.ts            # Resend client
 │   │   ├── send.tsx             # Email sending
 │   │   └── templates.tsx        # Email templates
-│   ├── validations/             # Zod schemas
-│   │   ├── user.ts              # User validation
-│   │   ├── team.ts              # Team validation
-│   │   ├── payment.ts           # Payment validation
-│   │   └── common.ts            # Common validators
 │   └── utils/                   # Utility functions
 │       ├── encryption.ts        # Token encryption
 │       └── text-formatter.tsx   # Text formatting (lists, headers)
@@ -694,19 +689,6 @@ cv research/
 - weaknesses: jsonb (string[])
 - createdAt, updatedAt: timestamp
 ```
-
----
-
-### Advanced SaaS Tables (Schema Ready, Not Yet Implemented)
-
-- `projects` - Project/workspace management
-- `api_keys` - API key management
-- `webhook_endpoints` - Webhook subscriptions
-- `webhook_deliveries` - Webhook delivery logs
-- `usage_events` - Usage tracking & analytics
-- `plans` - Pricing plan definitions
-- `features` - Feature flags
-- `plan_features` - Plan-feature mappings
 
 ---
 
@@ -1321,10 +1303,169 @@ MIT License - See LICENSE file for details
 ## Project Status
 
 **Version**: 1.0.0 (Development)
-**Last Updated**: 2025-10-15
+**Last Updated**: 2025-10-16
 **Maintainer**: Development Team
 
 **Recent Changes**:
+- **Code Optimization Phase 2 & 3 - Removed Validation Modules & Optimized Queries** (2025-10-16):
+  - **Phase 2: Validation Module Removal**
+    - **Problem**: 6 validation files (~300+ lines) completely unused in application
+      - Files existed in `lib/validations/` but never imported anywhere
+      - Only references were self-documentation examples
+      - Added code complexity without any functionality
+    - **Solution**: Complete removal of validation directory
+      - Deleted files: `user.ts`, `team.ts`, `payment.ts`, `common.ts`, `index.ts`, `README.md`
+      - No impact on application functionality (100% unused code)
+      - Verified zero imports in app/ directory and throughout codebase
+    - **Benefits**:
+      - Removed ~300+ lines of dead code
+      - Cleaner codebase structure
+      - Reduced cognitive overhead for developers
+      - Less maintenance burden
+  - **Phase 3: Query Optimization**
+    - **Problem**: Dashboard candidate count query inefficient
+      - Fetched ALL candidateId values from database
+      - Processed in JavaScript with `.map()`, `.filter()`, `new Set()`
+      - O(n) memory usage for all IDs
+      - Slow for large datasets (100+ candidates)
+    - **Solution**: Use SQL COUNT(DISTINCT) directly in database
+      - Changed from: Fetch all IDs → process in JS → count unique
+      - Changed to: `COUNT(DISTINCT candidateId)` in PostgreSQL
+      - Uses Drizzle's `sql` template for raw SQL optimization
+    - **Code Changes** (`app/(dashboard)/dashboard/page.tsx:25-32`):
+      ```typescript
+      // Before (inefficient):
+      const cvWithCandidates = await db
+        .select({ candidateId: cvs.candidateId })
+        .from(cvs)
+        .where(eq(cvs.teamId, teamId));
+      const uniqueCandidateIds = new Set(
+        cvWithCandidates.map(c => c.candidateId).filter(id => id !== null)
+      );
+      const candidateCount = uniqueCandidateIds.size;
+
+      // After (optimized):
+      const candidateCountResult = await db
+        .select({ count: sql<number>`COUNT(DISTINCT ${cvs.candidateId})` })
+        .from(cvs)
+        .where(eq(cvs.teamId, teamId));
+      const candidateCount = candidateCountResult[0]?.count || 0;
+      ```
+    - **Benefits**:
+      - 🚀 **Performance**: Counts in database instead of JavaScript
+      - 💾 **Memory**: O(1) vs O(n) memory usage
+      - ⚡ **Speed**: Single aggregate query vs fetch-all-then-process
+      - 📊 **Scalability**: Handles large datasets efficiently
+      - 🔧 **Simplicity**: Less code, clearer intent
+  - **Files Modified**:
+    - Deleted: `lib/validations/*` (6 files removed)
+    - Updated: `app/(dashboard)/dashboard/page.tsx` (query optimization)
+  - **Verification**:
+    - TypeScript compilation: ✅ Successful
+    - Build: Stripe config error (pre-existing, unrelated to changes)
+    - Code quality: Zero unused imports, cleaner structure
+- **Database Schema Cleanup - Removed Unused SaaS Boilerplate Tables** (2025-10-16):
+  - **Problem**: Schema contained 8 unused tables from original SaaS boilerplate template
+    - Tables were fully defined but never used in the CV ATS application
+    - Added unnecessary complexity to migrations and schema maintenance
+    - Cluttered the schema with ~280 lines of unused code
+  - **Solution**: Complete removal of unused tables
+    - Removed 8 table definitions: `projects`, `apiKeys`, `webhookEndpoints`, `webhookDeliveries`, `usageEvents`, `plans`, `features`, `planFeatures`
+    - Removed all Drizzle relations for these tables
+    - Removed all TypeScript type exports
+    - Generated and applied migration `0005_chubby_namorita.sql` to drop tables with CASCADE
+    - Updated project_summary.md to reflect changes
+  - **Database Migration**: `lib/db/migrations/0005_chubby_namorita.sql`
+    - Drops 8 tables with CASCADE to handle dependencies
+    - Safely removes foreign key constraints
+  - **Benefits**:
+    - Reduced schema from 19 tables to 11 tables (42% reduction)
+    - Removed ~153 lines of code from schema.ts
+    - Cleaner, more focused database structure
+    - Easier schema maintenance and understanding
+    - Faster migrations and database operations
+    - Only keeps tables actively used by the CV ATS application
+  - **Remaining Tables** (11 total):
+    - Core SaaS (5): users, teams, team_members, activity_logs, invitations
+    - CV Management (6): gmail_connections, candidates, cvs, job_positions, applications, candidate_matches
+- **Removed Mistral Local LLM, Fixed Candidate Data Extraction, Fixed Dashboard Counter** (2025-10-16):
+  - **Problem 1**: Mistral (local LLM) performed poorly compared to Grok
+    - Mistral generated placeholder/example data instead of real analysis
+    - Required ~6-7GB RAM and Ollama setup
+    - Quality significantly lower than Grok
+  - **Problem 2**: AI extracting placeholder personal data from CVs
+    - Names like "John Doe", "Jan Kowalski" instead of real candidate names
+    - Email addresses like "john.doe@example.com" instead of actual emails
+    - Phone numbers like "+48 123 456 789" instead of real numbers
+    - Root cause: Prompt contained detailed example with "Jan Kowalski" data that AI copied literally
+  - **Problem 3**: Dashboard candidate counter showing cumulative count
+    - Counter showed 6 candidates when only 2 CVs existed
+    - Counted all candidates ever created, not current candidates with CVs
+    - Didn't update when CVs were deleted
+  - **Solution 1 - Removed Mistral Completely**:
+    - Deleted `components/ai-provider-switch.tsx` (navbar switcher)
+    - Removed AIProviderSwitch from dashboard layout
+    - Deleted MistralProvider class from `lib/ai/providers.ts`
+    - Removed Ollama integration code
+    - Simplified AI settings to only xAI API key input
+    - Updated `getAIProvider()` to require user's xAI API key (mandatory)
+    - Database migration `0004_young_marvex.sql`: Dropped `ai_provider` and `ollama_base_url` columns
+    - Kept only Grok (xAI) with user API key requirement
+  - **Solution 2 - Fixed CV Data Extraction** (`lib/ai/cv-processor.ts:166-268`):
+    - Removed concrete example data from prompt:
+      * Before: `"firstName": "Jan", "lastName": "Kowalski", "email": "jan.kowalski@example.com"`
+      * After: `"firstName": "[EKSTRAKTUJ Z CV - dokładne imię kandydata lub null]"`
+    - Added new section "EKSTRAKCJA DANYCH OSOBOWYCH" with strict rules:
+      * ⚠️ KRYTYCZNE: Ekstraktuj dane DOKŁADNIE z CV
+      * ⛔ ZABRONIONE: NIE używaj przykładowych danych (Jan, John, Doe, example.com)
+      * ✅ PRAWIDŁOWE: Jeśli dane w CV → ekstraktuj; jeśli brak → zwróć null
+    - Added validation step to check for placeholder names
+    - Changed example JSON structure to use instruction comments instead of real data
+  - **Solution 3 - Fixed Dashboard Counter** (`app/(dashboard)/dashboard/page.tsx:25-39`):
+    - Changed from counting all candidates in table to counting unique candidates with CVs:
+      * Before: `SELECT count() FROM candidates WHERE teamId = ?` (returns 6)
+      * After: `SELECT DISTINCT candidateId FROM cvs WHERE teamId = ?` (returns 2)
+    - Uses `Set()` to count unique candidateId values from cvs table
+    - Counter now reflects actual number of candidates with CVs in system
+    - Updates correctly when CVs are deleted (shows 0 when all deleted)
+  - **Updated Files**:
+    - `lib/ai/providers.ts` - Removed MistralProvider, simplified to Grok only
+    - `lib/ai/cv-processor.ts` - Fixed prompt engineering for personal data extraction
+    - `app/(dashboard)/dashboard/page.tsx` - Fixed candidate counter logic
+    - `app/(dashboard)/dashboard/settings/ai-provider-settings.tsx` - Simplified to single API key input
+    - `app/(dashboard)/layout.tsx` - Removed AIProviderSwitch component
+    - `app/api/team/ai-settings/route.ts` - Simplified to handle only xaiApiKey
+    - `app/api/team/ai-settings/test/route.ts` - Tests only Grok provider
+    - `lib/db/schema.ts` - Removed ai_provider and ollama_base_url columns
+  - **Database Migrations**:
+    - `lib/db/migrations/0004_young_marvex.sql` - Drop unused AI provider columns
+  - **Benefits**:
+    - Single, high-quality AI provider (Grok) - no confusion
+    - Users must provide their own xAI API key (no shared keys)
+    - Real candidate data extracted from CVs (no more "John Doe")
+    - Accurate dashboard statistics (reflects actual CV count)
+    - Simpler codebase and maintenance
+    - Better user experience with consistent, quality AI responses
+  - **AI Provider Architecture (After Changes)**:
+    ```typescript
+    // Only Grok supported, mandatory user API key
+    export class GrokProvider implements AIProvider {
+      constructor(apiKey?: string) {
+        this.client = new OpenAI({
+          apiKey: apiKey || process.env.XAI_API_KEY, // User key priority
+          baseURL: 'https://api.x.ai/v1',
+        });
+      }
+    }
+
+    // getAIProvider throws error if no user API key
+    export async function getAIProvider(teamId: number) {
+      if (!team.xaiApiKey) {
+        throw new Error('⚠️ API key xAI nie jest skonfigurowany. Przejdź do Settings...');
+      }
+      return new GrokProvider(team.xaiApiKey);
+    }
+    ```
 - **Orphaned CV Detection and Cleanup** (2025-10-15):
   - **Problem**: CV records remained in database after files were deleted
     - CVs displayed on frontend even though files didn't exist on disk

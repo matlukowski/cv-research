@@ -12,7 +12,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/lib/db/drizzle';
 import { cvs, jobPositions, candidates, gmailConnections } from '@/lib/db/schema';
-import { eq, and, count } from 'drizzle-orm';
+import { eq, and, count, sql } from 'drizzle-orm';
 import { FileText, Briefcase, Users, Mail, TrendingUp, CheckCircle2 } from 'lucide-react';
 
 async function getDashboardStats(teamId: number) {
@@ -23,20 +23,13 @@ async function getDashboardStats(teamId: number) {
       .where(eq(cvs.teamId, teamId));
 
     // Pobierz liczbę UNIKALNYCH kandydatów którzy mają CV w systemie
-    // (nie liczy kandydatów których CV zostały usunięte)
-    const cvWithCandidates = await db
-      .select({ candidateId: cvs.candidateId })
+    // Używa COUNT(DISTINCT candidateId) w SQL - szybsze niż pobieranie wszystkich ID i liczenie w JS
+    const candidateCountResult = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${cvs.candidateId})` })
       .from(cvs)
       .where(eq(cvs.teamId, teamId));
 
-    // Zlicz unikalne candidateId (pomijając null)
-    const uniqueCandidateIds = new Set(
-      cvWithCandidates
-        .map(c => c.candidateId)
-        .filter(id => id !== null)
-    );
-
-    const candidateCount = uniqueCandidateIds.size;
+    const candidateCount = candidateCountResult[0]?.count || 0;
 
     // Pobierz liczbę aktywnych stanowisk
     const activePositionsCount = await db.select({ count: count() })
