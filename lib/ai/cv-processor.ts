@@ -1,17 +1,10 @@
 'use server';
 
-import { OpenAI } from 'openai';
 import { db } from '../db/drizzle';
 import { cvs, candidates, type NewCandidate } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getFile } from '../storage/file-storage';
-
-const openai = new OpenAI({
-  apiKey: process.env.XAI_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
-});
-
-const AI_MODEL = process.env.XAI_MODEL || 'grok-4-fast-non-reasoning';
+import { getAIProvider } from './providers';
 
 export interface CVValidationResult {
   isCV: boolean;
@@ -106,10 +99,15 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
 }
 
 /**
- * Validate if a document is a CV using Grok 4 Fast (xAI)
+ * Validate if a document is a CV using AI
  */
-export async function validateCV(pdfText: string): Promise<CVValidationResult> {
+export async function validateCV(
+  pdfText: string,
+  teamId: number
+): Promise<CVValidationResult> {
   try {
+    const aiProvider = await getAIProvider(teamId);
+
     const prompt = `Jesteś ekspertem HR specjalizującym się w analizie dokumentów rekrutacyjnych.
 
 Przeanalizuj poniższy tekst i określ czy jest to CV (curriculum vitae / resume) kandydata do pracy.
@@ -136,19 +134,13 @@ Odpowiedz w formacie JSON:
   "reason": "krótkie wyjaśnienie decyzji po polsku"
 }`;
 
-    const result = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
+    const result = await aiProvider.chat({
+      prompt,
       temperature: 0.3,
-      response_format: { type: 'json_object' },
+      jsonMode: true,
     });
 
-    const parsed = JSON.parse(result.choices[0].message.content || '{}');
+    const parsed = JSON.parse(result.content || '{}');
 
     return {
       isCV: parsed.isCV,
@@ -162,12 +154,15 @@ Odpowiedz w formacie JSON:
 }
 
 /**
- * Extract structured candidate data from CV text using Grok 4 Fast (xAI)
+ * Extract structured candidate data from CV text using AI
  */
 export async function extractCandidateData(
-  pdfText: string
+  pdfText: string,
+  teamId: number
 ): Promise<ExtractedCandidateData> {
   try {
+    const aiProvider = await getAIProvider(teamId);
+
     const prompt = `Jesteś ekspertem HR specjalizującym się w analizie CV i ekstrakcji danych kandydatów.
 
 TEKST CV:
@@ -194,69 +189,91 @@ INSTRUKCJE EKSTRAKCJI:
 
 4. **Lata doświadczenia**: Oblicz łączną liczbę lat pracy zawodowej na podstawie dat w doświadczeniu. Zaokrąglij do pełnych lat.
 
-5. **Key Achievements**: Wybierz 3-5 najważniejszych osiągnięć kandydata z całego CV (konkretne wyniki, nagrody, projekty, awanse).
+5. **Key Achievements**: Wybierz 3-5 najważniejszych osiągnięć kandydata z całego CV. Każde osiągnięcie powinno być:
+   - KONKRETNE i MIERZALNE (liczby, procenty, konkretne rezultaty)
+   - Bazowane na faktach z CV (nagrody, projekty, awanse, osiągnięcia biznesowe)
+   - NIE ogólne stwierdzenia typu "dobra praca" czy "sukces projektu"
+   - Przykłady: "Zwiększenie wydajności o 40%", "Zbudowanie zespołu 5 osób", "Nagroda Employee of the Year"
 
-Wyciągnij następujące informacje i zwróć w formacie JSON:
+6. **EKSTRAKCJA DANYCH OSOBOWYCH** (NAJWAŻNIEJSZE!):
+   ⚠️ KRYTYCZNE: Ekstraktuj dane osobowe DOKŁADNIE z tekstu CV powyżej. NIE generuj przykładowych ani losowych danych!
+
+   - **firstName / lastName**: Szukaj w sekcji nagłówkowej CV, kontakt, dane osobowe
+   - **email**: Szukaj adresu email w formacie xxx@yyy.zzz
+   - **phone**: Szukaj numeru telefonu (format międzynarodowy z +)
+   - **location**: Szukaj miasta/kraju zamieszkania
+
+   ⛔ ZABRONIONE: NIE używaj przykładowych danych jak:
+   - Imiona: "Jan", "John", "Jane", "Kowalski", "Doe", "Smith"
+   - Email: "example.com", "test.com", "sample.com"
+   - Telefony: "+48 123 456 789", "+1 234 567 8901"
+
+   ✅ PRAWIDŁOWE działanie:
+   - Jeśli dane są w CV → ekstraktuj dokładnie jak są
+   - Jeśli danych NIE MA w CV → zwróć null (nie generuj!)
+   - Sprawdź różne sekcje CV: nagłówek, stopka, sekcja "Kontakt", "O mnie"
+
+FORMAT ODPOWIEDZI (struktura JSON):
 {
-  "firstName": "imię",
-  "lastName": "nazwisko",
-  "email": "adres email w formacie email@domain.com (jeśli dostępny)",
-  "phone": "numer telefonu w formacie +XX XXX XXX XXX (jeśli dostępny)",
-  "summary": "profesjonalne podsumowanie profilu (4-6 zdań) - patrz instrukcje powyżej",
-  "yearsOfExperience": liczba lat doświadczenia (number) lub null,
-  "technicalSkills": ["Umiejętność techniczna 1", "Umiejętność techniczna 2", ...],
-  "softSkills": ["Umiejętność miękka 1", "Umiejętność miękka 2", ...],
+  "firstName": "[EKSTRAKTUJ Z CV - dokładne imię kandydata lub null]",
+  "lastName": "[EKSTRAKTUJ Z CV - dokładne nazwisko kandydata lub null]",
+  "email": "[EKSTRAKTUJ Z CV - adres email lub null]",
+  "phone": "[EKSTRAKTUJ Z CV - numer telefonu lub null]",
+  "location": "[EKSTRAKTUJ Z CV - miasto/kraj lub null]",
+
+  "summary": "[Wygeneruj profesjonalne podsumowanie 4-6 zdań na podstawie CV]",
+  "yearsOfExperience": [Oblicz na podstawie dat w experience],
+
+  "technicalSkills": ["Skill 1", "Skill 2", ...],
+  "softSkills": ["Skill 1", "Skill 2", ...],
+
   "experience": [
     {
-      "company": "Nazwa firmy",
-      "position": "Stanowisko",
+      "company": "Nazwa firmy z CV",
+      "position": "Stanowisko z CV",
       "startDate": "YYYY-MM",
-      "endDate": "YYYY-MM" lub null jeśli aktualne,
-      "description": "Profesjonalny opis osiągnięć i obowiązków"
+      "endDate": "YYYY-MM lub null",
+      "description": "Opis obowiązków z CV"
     }
   ],
+
   "education": [
     {
-      "institution": "Nazwa uczelni",
-      "degree": "Stopień (Licencjat, Magister, Inżynier, etc.)",
-      "field": "Kierunek studiów",
-      "graduationYear": "YYYY"
+      "institution": "Nazwa uczelni z CV",
+      "degree": "Stopień/tytuł z CV",
+      "field": "Kierunek studiów z CV",
+      "graduationYear": "YYYY lub null"
     }
   ],
-  "certifications": ["Certyfikat 1", "Certyfikat 2", ...] lub null,
+
+  "certifications": ["Certyfikat 1 z CV", "Certyfikat 2 z CV"],
+
   "languages": [
-    {
-      "language": "Język (np. Polski, Angielski)",
-      "level": "Poziom: Native / Fluent / Advanced / Intermediate / Basic"
-    }
-  ] lub null,
+    {"language": "Język z CV", "level": "Poziom z CV"}
+  ],
+
   "keyAchievements": [
-    "Osiągnięcie 1 - konkretny, mierzalny wynik",
-    "Osiągnięcie 2 - konkretny, mierzalny wynik",
-    "Osiągnięcie 3 - konkretny, mierzalny wynik"
-  ] lub null,
-  "linkedinUrl": "https://linkedin.com/in/... (jeśli dostępny)" lub null,
-  "location": "Miasto, Kraj" lub null
+    "Konkretne osiągnięcie z CV z liczbami/procentami",
+    "Kolejne osiągnięcie z faktów w CV"
+  ],
+
+  "linkedinUrl": "URL LinkedIn z CV lub null"
 }
 
-WAŻNE:
+WAŻNE - WALIDACJA:
 - Jeśli jakiejś informacji nie ma w CV, użyj null lub pustej tablicy []
+- ⚠️ NIE GENERUJ przykładowych danych osobowych! Jeśli nie ma w CV → null
+- Sprawdź czy firstName/lastName NIE są przykładowe ("Jan", "John", "Doe") - jeśli tak, szukaj ponownie lub zwróć null
 - Zwróć TYLKO poprawny JSON, bez dodatkowego tekstu ani komentarzy
 - Upewnij się że JSON jest poprawnie sformatowany (prawidłowe cudzysłowy, przecinki, etc.)`;
 
-    const result = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
+    const result = await aiProvider.chat({
+      prompt,
       temperature: 0.3,
-      response_format: { type: 'json_object' },
+      jsonMode: true,
     });
 
-    const parsed: ExtractedCandidateData = JSON.parse(result.choices[0].message.content || '{}');
+    const parsed: ExtractedCandidateData = JSON.parse(result.content || '{}');
 
     return parsed;
   } catch (error) {
@@ -301,7 +318,7 @@ export async function processCVById(cvId: number): Promise<{
       .where(eq(cvs.id, cvId));
 
     // Validate with AI
-    const validation = await validateCV(pdfText);
+    const validation = await validateCV(pdfText, cv.teamId);
 
     // Update validation results
     await db
@@ -327,7 +344,7 @@ export async function processCVById(cvId: number): Promise<{
     }
 
     // Extract candidate data
-    const candidateData = await extractCandidateData(pdfText);
+    const candidateData = await extractCandidateData(pdfText, cv.teamId);
 
     // Create or update candidate
     const [candidate] = await db

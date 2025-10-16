@@ -1,16 +1,9 @@
 'use server';
 
-import { OpenAI } from 'openai';
 import { db } from '../db/drizzle';
 import { jobPositions } from '../db/schema';
 import { eq } from 'drizzle-orm';
-
-const openai = new OpenAI({
-  apiKey: process.env.XAI_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
-});
-
-const AI_MODEL = process.env.XAI_MODEL || 'grok-4-fast-non-reasoning';
+import { getAIProvider } from './providers';
 
 export interface JobDetectionResult {
   jobPositionId: number | null;
@@ -53,6 +46,8 @@ export async function detectJobPosition(
       location: p.location,
     }));
 
+    const aiProvider = await getAIProvider(teamId);
+
     const prompt = `Jesteś ekspertem HR. Twoim zadaniem jest określić, czy kandydat aplikuje na konkretne stanowisko, czy wysyła spontaniczną aplikację.
 
 DOSTĘPNE STANOWISKA PRACY:
@@ -82,19 +77,13 @@ Zwróć odpowiedź w formacie JSON:
   "applicationType": "direct" lub "spontaneous"
 }`;
 
-    const result = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.2, // lower temperature for more consistent results
-      response_format: { type: 'json_object' },
+    const result = await aiProvider.chat({
+      prompt,
+      temperature: 0.2,
+      jsonMode: true,
     });
 
-    const parsed = JSON.parse(result.choices[0].message.content || '{}');
+    const parsed = JSON.parse(result.content || '{}');
 
     // Validate the result
     if (parsed.jobPositionId !== null) {

@@ -1,6 +1,5 @@
 'use server';
 
-import { OpenAI } from 'openai';
 import { db } from '../db/drizzle';
 import {
   candidates,
@@ -11,13 +10,7 @@ import {
 } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { processAllPendingCVs } from './cv-processor';
-
-const openai = new OpenAI({
-  apiKey: process.env.XAI_API_KEY,
-  baseURL: 'https://api.x.ai/v1',
-});
-
-const AI_MODEL = process.env.XAI_MODEL || 'grok-4-fast-non-reasoning';
+import { getAIProvider } from './providers';
 
 export interface MatchResult {
   candidateId: number;
@@ -249,6 +242,8 @@ async function matchCandidateToPosition(
   cv: any,
   position: any
 ): Promise<MatchResult> {
+  const aiProvider = await getAIProvider(position.teamId);
+
   const prompt = `Jesteś ekspertem HR specjalizującym się w rekrutacji. Oceń dopasowanie kandydata do stanowiska pracy.
 
 STANOWISKO PRACY:
@@ -280,29 +275,33 @@ Oceń dopasowanie kandydata do stanowiska w skali 0-100, gdzie:
 - 71-85: Bardzo dobre dopasowanie, spełnia wszystkie wymagania
 - 86-100: Idealny kandydat, przewyższa wymagania
 
-Zwróć odpowiedź w formacie JSON:
+WAŻNE ZASADY ANALIZY:
+1. Przeanalizuj dokładnie CV kandydata i porównaj z wymaganiami stanowiska
+2. Generuj KONKRETNE i SZCZEGÓŁOWE mocne/słabe strony na podstawie faktów z CV
+3. NIE używaj ogólnych fraz typu "dobra komunikacja" czy "duże doświadczenie"
+4. Odnoś się do KONKRETNYCH technologii, projektów, certyfikatów, lat doświadczenia z CV
+5. Każda mocna/słaba strona powinna być precyzyjna i mierzalna
+6. W analizie podaj konkretne przykłady z CV kandydata
+
+PRZYKŁAD poprawnej odpowiedzi:
 {
-  "matchScore": liczba 0-100,
-  "aiAnalysis": "szczegółowa analiza dopasowania (3-4 zdania)",
-  "strengths": ["mocna strona 1", "mocna strona 2", "mocna strona 3"],
-  "weaknesses": ["słaba strona 1", "słaba strona 2"],
-  "summary": "krótkie podsumowanie (1-2 zdania) dlaczego kandydat pasuje lub nie pasuje"
-}`;
+  "matchScore": 85,
+  "aiAnalysis": "Kandydat ma solidne 5 lat komercyjnego doświadczenia w JavaScript i React, co idealnie pasuje do wymagań stanowiska. Posiada certyfikat AWS Solutions Architect Professional oraz praktyczne doświadczenie w pracy w zespołach Agile/Scrum. Realizował projekty z wykorzystaniem Node.js, PostgreSQL i Docker. Brakuje mu jedynie praktycznego doświadczenia z Kubernetes, które jest wymienione jako nice-to-have, ale jest to umiejętność możliwa do szybkiego nabycia.",
+  "strengths": ["5+ lat komercyjnego doświadczenia w React i TypeScript zgodnie z wymaganiami", "Certyfikat AWS Solutions Architect Professional potwierdzający wiedzę cloud", "Praktyczne doświadczenie z Node.js, PostgreSQL i Docker wymienionymi w ofercie", "Znajomość Agile/Scrum i doświadczenie w zespołach 5-10 osób"],
+  "weaknesses": ["Brak praktycznego doświadczenia z Kubernetes wymienionego w nice-to-have", "Tylko podstawowa znajomość Python, a stanowisko preferuje znajomość dodatkowych języków"],
+  "summary": "Bardzo dobry kandydat z solidnym doświadczeniem technicznym pokrywającym 90% wymagań stanowiska. Posiada odpowiednie certyfikaty i doświadczenie komercyjne w kluczowych technologiach. Niewielkie braki w obszarach nice-to-have."
+}
+
+Zwróć odpowiedź w tym samym formacie JSON, ale z analizą KONKRETNEGO kandydata:`;
 
   try {
-    const result = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
+    const result = await aiProvider.chat({
+      prompt,
       temperature: 0.3,
-      response_format: { type: 'json_object' },
+      jsonMode: true,
     });
 
-    const parsed = JSON.parse(result.choices[0].message.content || '{}');
+    const parsed = JSON.parse(result.content || '{}');
 
     return {
       candidateId: candidate.id,

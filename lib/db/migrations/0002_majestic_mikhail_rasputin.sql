@@ -1,0 +1,2 @@
+ALTER TABLE "teams" ADD COLUMN "ai_provider" varchar(20) DEFAULT 'grok' NOT NULL;--> statement-breakpoint
+ALTER TABLE "teams" ADD COLUMN "ollama_base_url" varchar(255) DEFAULT 'http://localhost:11434';

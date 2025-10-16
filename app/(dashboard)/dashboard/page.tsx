@@ -22,10 +22,21 @@ async function getDashboardStats(teamId: number) {
       .from(cvs)
       .where(eq(cvs.teamId, teamId));
 
-    // Pobierz liczbę kandydatów
-    const candidateCount = await db.select({ count: count() })
-      .from(candidates)
-      .where(eq(candidates.teamId, teamId));
+    // Pobierz liczbę UNIKALNYCH kandydatów którzy mają CV w systemie
+    // (nie liczy kandydatów których CV zostały usunięte)
+    const cvWithCandidates = await db
+      .select({ candidateId: cvs.candidateId })
+      .from(cvs)
+      .where(eq(cvs.teamId, teamId));
+
+    // Zlicz unikalne candidateId (pomijając null)
+    const uniqueCandidateIds = new Set(
+      cvWithCandidates
+        .map(c => c.candidateId)
+        .filter(id => id !== null)
+    );
+
+    const candidateCount = uniqueCandidateIds.size;
 
     // Pobierz liczbę aktywnych stanowisk
     const activePositionsCount = await db.select({ count: count() })
@@ -46,7 +57,7 @@ async function getDashboardStats(teamId: number) {
 
     return {
       cvCount: cvCount[0]?.count || 0,
-      candidateCount: candidateCount[0]?.count || 0,
+      candidateCount: candidateCount,
       activePositionsCount: activePositionsCount[0]?.count || 0,
       gmailConnected: gmailConnection.length > 0,
       gmailEmail: gmailConnection[0]?.email || null,

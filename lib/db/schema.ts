@@ -32,6 +32,8 @@ export const teams = pgTable('teams', {
   stripeProductId: text('stripe_product_id'),
   planName: varchar('plan_name', { length: 50 }),
   subscriptionStatus: varchar('subscription_status', { length: 20 }),
+  // AI settings - only Grok (xAI) is supported
+  xaiApiKey: text('xai_api_key'), // User's xAI API key for Grok
 });
 
 export const teamMembers = pgTable('team_members', {

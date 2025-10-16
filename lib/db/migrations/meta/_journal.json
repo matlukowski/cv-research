@@ -15,6 +15,27 @@
       "when": 1760528748005,
       "tag": "0001_mighty_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1760628416549,
+      "tag": "0002_majestic_mikhail_rasputin",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1760633115027,
+      "tag": "0003_unknown_stick",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1760634628114,
+      "tag": "0004_young_marvex",
+      "breakpoints": true
     }
   ]
 }

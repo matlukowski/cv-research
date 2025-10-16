@@ -1,0 +1,1 @@
+ALTER TABLE "teams" ADD COLUMN "xai_api_key" text;
